@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { Agent, AgentStatus } from "@/types/agent";
 import { formatUptime } from "@/data/mock-agents";
 import { RoleIcon } from "@/components/role-icon";
@@ -92,7 +93,9 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
           </div>
           <div className="min-w-0">
             <h3 className="text-sm md:text-base font-semibold text-gray-900 dark:text-white truncate">
-              {agent.name}
+              <Link href={`/agents/${agent.id}`} className="hover:text-amber-400 transition-colors">
+                {agent.name}
+              </Link>
             </h3>
             <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 truncate">
               {agent.role}
