@@ -29,7 +29,7 @@ const models = [
 export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModalProps) {
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState(mockRoles[0]?.id || "");
-  const [teamId, setTeamId] = useState(teams[0]?.id || "");
+  const [teamId, setTeamId] = useState<string>(teams[0]?.id || "");
   const [model, setModel] = useState("gpt-4o");
   const [autoStart, setAutoStart] = useState(true);
   const [isDeploying, setIsDeploying] = useState(false);

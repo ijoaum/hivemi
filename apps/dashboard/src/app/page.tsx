@@ -8,7 +8,7 @@ import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, statusApi, type Agent, type Team, type Role } from "@/lib/api";
 import { mockAgents, getAgentsByTeam } from "@/data/mock-agents";
-import { teams as mockTeams } from "@/types/agent";
+import { teams as mockTeams, TeamId } from "@/types/agent";
 import { cn } from "@/lib/utils";
 
 const teamColors: Record<string, string> = {
@@ -63,8 +63,8 @@ export default function Home() {
   }, [apiTeams, teamsError]);
 
   const getTeamAgents = (teamId: string) => {
-    if (agentsError || !apiAgents?.length) return getAgentsByTeam(teamId);
-    return agents.filter(a => a.teamId === teamId);
+    if (agentsError || !apiAgents?.length) return getAgentsByTeam(teamId as TeamId);
+    return agents.filter(a => (a as { teamId?: string; team?: string }).teamId === teamId || (a as { team?: string }).team === teamId);
   };
 
   const handleDeploy = async (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {

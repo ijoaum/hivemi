@@ -6,6 +6,7 @@ import { RoleCard } from "@/components/role-card";
 import { useApi } from "@/hooks/use-api";
 import { rolesApi, agentsApi } from "@/lib/api";
 import { mockRoles } from "@/data/mock-roles";
+import type { Role } from "@/types/role";
 
 export default function RolesPage() {
   // Fetch from API
@@ -78,7 +79,7 @@ export default function RolesPage() {
         {/* Roles grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {roles.map((role) => (
-            <RoleCard key={role.id} role={role} />
+            <RoleCard key={role.id} role={role as Role} />
           ))}
         </div>
       </main>

@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+// API calls go to same origin (Next.js API routes handle proxying)
+const API_BASE_URL = "";
 
 interface ApiResponse<T> {
   success: boolean;
