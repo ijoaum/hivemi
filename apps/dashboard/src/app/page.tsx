@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Rocket } from "lucide-react";
 import { RoleIcon } from "@/components/role-icon";
 
 const teamColors: Record<string, string> = {
@@ -210,7 +211,7 @@ export default function Home() {
             className="px-3 md:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
                        font-medium rounded-lg transition-colors flex items-center gap-2"
           >
-            <span className="text-lg">+</span>
+            <Rocket className="w-5 h-5" />
             <span className="hidden sm:inline">Deploy Agent</span>
           </button>
         </div>
