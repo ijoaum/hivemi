@@ -12,12 +12,14 @@ import {
   Settings, 
   ScrollText,
   Menu,
-  X
+  X,
+  Network
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Agents", icon: Users },
   { href: "/tasks", label: "Tasks", icon: ClipboardList },
+  { href: "/teams", label: "Teams", icon: Network },
   { href: "/roles", label: "Roles", icon: Theater },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/logs", label: "Logs", icon: ScrollText },

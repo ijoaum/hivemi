@@ -120,6 +120,13 @@ export const teamsApi = {
     method: "POST",
     body: JSON.stringify(data),
   }),
+  update: (id: string, data: Partial<Team>) => fetchApi<Team>(`/api/teams/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }),
+  delete: (id: string) => fetchApi<Team>(`/api/teams/${id}`, {
+    method: "DELETE",
+  }),
 };
 
 // Tasks
