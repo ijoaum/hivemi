@@ -6,7 +6,7 @@ import { StatusBar } from "@/components/status-bar";
 import { Sidebar } from "@/components/sidebar";
 import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { useApi } from "@/hooks/use-api";
-import { agentsApi, teamsApi, rolesApi, statusApi, type Agent, type Team, type Role } from "@/lib/api";
+import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const teamColors: Record<string, string> = {
@@ -72,12 +72,10 @@ export default function Home() {
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const rolesFetcher = useCallback(() => rolesApi.list(), []);
-  const statusFetcher = useCallback(() => statusApi.get(), []);
   
   const { data: apiAgents, loading: agentsLoading } = useApi(agentsFetcher, { refetchInterval: 5000 });
   const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000 });
   const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000 });
-  const { data: apiStatus } = useApi(statusFetcher, { refetchInterval: 5000 });
 
   const isLoading = agentsLoading || teamsLoading;
 
@@ -98,6 +96,15 @@ export default function Home() {
       model: a.model,
     }));
   }, [apiAgents, apiRoles]);
+
+  // Calculate stats from agents
+  const stats = useMemo(() => ({
+    total: agents.length,
+    online: agents.filter(a => a.status !== "offline").length,
+    working: agents.filter(a => a.status === "working").length,
+    idle: agents.filter(a => a.status === "idle").length,
+    error: agents.filter(a => a.status === "error").length,
+  }), [agents]);
 
   const teams = useMemo(() => {
     if (!apiTeams?.length) return [];
@@ -217,25 +224,25 @@ export default function Home() {
           <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
             <p className="text-sm text-gray-600 dark:text-gray-400">Total Agents</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
-              {isLoading ? "..." : (apiStatus?.agents.total || agents.length)}
+              {isLoading ? "..." : stats.total}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
             <p className="text-sm text-gray-600 dark:text-gray-400">Working</p>
             <p className="text-3xl font-bold text-amber-600 dark:text-amber-400 mt-1">
-              {isLoading ? "..." : (apiStatus?.agents.working || agents.filter(a => a.status === "working").length)}
+              {isLoading ? "..." : stats.working}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
             <p className="text-sm text-gray-600 dark:text-gray-400">Idle</p>
             <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-              {isLoading ? "..." : (apiStatus?.agents.idle || agents.filter(a => a.status === "idle").length)}
+              {isLoading ? "..." : stats.idle}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
             <p className="text-sm text-gray-600 dark:text-gray-400">Active Teams</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
-              {isLoading ? "..." : (apiStatus?.teams || teams.length)}
+              {isLoading ? "..." : teams.length}
             </p>
           </div>
         </div>
