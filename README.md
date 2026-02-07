@@ -113,14 +113,35 @@ docker-compose up -d postgres
 # Run database migrations
 pnpm --filter @hivemi/registry db:migrate
 
-# Seed initial data (roles, teams)
-pnpm --filter @hivemi/registry db:seed
+# Seed initial data (roles + teams)
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi \
+  pnpm --filter @hivemi/registry db:seed
 
 # Start all services
 pnpm dev
 ```
 
 Open http://localhost:3000 to access the dashboard.
+
+### Database Seeding
+
+The seed script populates the database with default roles and teams so the dashboard is ready to use out of the box.
+
+```bash
+# Seed (skips if data already exists — safe to run multiple times)
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi \
+  pnpm --filter @hivemi/registry db:seed
+
+# Force re-seed (clears ALL data: logs, tasks, agents, roles, teams)
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi \
+  pnpm --filter @hivemi/registry db:seed:force
+```
+
+**Default roles:** Product Manager, Tech Lead, Frontend Developer, Backend Developer, QA Engineer, SRE/DevOps, Designer, Data Analyst
+
+**Default teams:** Core Platform, Product, Infrastructure
+
+> ⚠️ `--force` deletes all existing data (respecting foreign key order). Use with caution in production.
 
 ### Using Docker Compose
 
@@ -177,14 +198,20 @@ hivemi/
 
 ---
 
-## Agent Roles
+## Default Roles
 
-| Role | Name | Emoji | Responsibilities |
-|------|------|-------|------------------|
-| PM | Reginald | 📋 | Analyzes requirements, creates user stories, prioritizes backlog |
-| Tech Lead | Cornelius | 🏗️ | Makes architectural decisions, reviews code, mentors developers |
-| Developer | Bartholomew | ⚙️ | Implements features, writes code, fixes bugs |
-| QA | Percival | 🧪 | Writes tests, finds bugs, ensures quality |
+| Role | Icon | Capabilities |
+|------|------|-------------|
+| Product Manager | 📋 | Requirement analysis, story creation, backlog prioritization |
+| Tech Lead | 🧱 | Architecture design, code review, technical decisions |
+| Frontend Developer | 🎨 | React development, CSS styling, component design |
+| Backend Developer | ⚙️ | API development, database design, business logic |
+| QA Engineer | 🧪 | Test writing, bug detection, test automation |
+| SRE / DevOps | 🚀 | Deployment, monitoring, infrastructure, incident response |
+| Designer | ✨ | Visual design, prototyping, design systems |
+| Data Analyst | 📊 | Data analysis, reporting, visualization |
+
+Each role includes a system prompt and a set of capabilities. Roles are fully customizable via the Dashboard or API.
 
 ---
 
@@ -214,28 +241,51 @@ All API endpoints are accessible through the dashboard gateway at port 3000.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/agents | List all agents |
+| GET | /api/agents | List all agents (with role and team populated) |
 | POST | /api/agents | Create agent |
-| GET | /api/agents/:id | Get agent by ID |
+| GET | /api/agents/:id | Get agent by ID (with role and team populated) |
 | PUT | /api/agents/:id | Update agent |
 | DELETE | /api/agents/:id | Delete agent |
+| POST | /api/agents/:id/heartbeat | Agent heartbeat |
 
 ### Tasks
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/tasks | List all tasks |
+| GET | /api/tasks | List tasks (filter: `?status=pending&teamId=...`) |
 | POST | /api/tasks | Create task |
 | GET | /api/tasks/:id | Get task by ID |
+| PUT | /api/tasks/:id | Update task |
+| DELETE | /api/tasks/:id | Delete task |
 | POST | /api/tasks/:id/retry | Retry failed task |
 | POST | /api/tasks/:id/cancel | Cancel task |
 
-### Teams & Roles
+### Roles
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/roles | List all roles |
+| POST | /api/roles | Create role |
+| GET | /api/roles/:id | Get role by ID |
+| PUT | /api/roles/:id | Update role |
+| DELETE | /api/roles/:id | Delete role |
+
+### Teams
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | /api/teams | List all teams |
-| GET | /api/roles | List all roles |
+| POST | /api/teams | Create team |
+| GET | /api/teams/:id | Get team by ID |
+| PUT | /api/teams/:id | Update team |
+| DELETE | /api/teams/:id | Delete team |
+
+### Logs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/logs | List all logs (ordered by timestamp desc) |
+| POST | /api/logs | Create log entry |
 
 ### External Tasks
 
@@ -283,6 +333,29 @@ pnpm typecheck
 
 # Lint
 pnpm lint
+```
+
+### Database Management
+
+All database commands run from the registry package:
+
+```bash
+# Generate migration from schema changes
+pnpm --filter @hivemi/registry db:generate
+
+# Apply pending migrations
+pnpm --filter @hivemi/registry db:migrate
+
+# Seed default data (roles + teams)
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi \
+  pnpm --filter @hivemi/registry db:seed
+
+# Force re-seed (⚠️ clears all data)
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi \
+  pnpm --filter @hivemi/registry db:seed:force
+
+# Open Drizzle Studio (visual DB browser)
+pnpm --filter @hivemi/registry db:studio
 ```
 
 ---
