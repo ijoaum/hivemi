@@ -1,5 +1,5 @@
 {
-  "name": "@hivemi/protocol",
+  "name": "@hivemi/llm",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,21 +7,23 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.6.16",
+    "ai": "^4.1.0",
+    "@ai-sdk/openai": "^1.1.0",
+    "@ai-sdk/anthropic": "^1.1.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/node": "^22.10.7",
     "typescript": "^5.7.3"
   }
 }
