@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+// In browser, use relative URLs (works with nginx proxy)
+// In server-side (if needed), use the env var or localhost
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 interface ApiResponse<T> {
   success: boolean;

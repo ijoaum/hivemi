@@ -14,6 +14,15 @@ app.use("*", honoLogger());
 // HEALTH
 // =============================================================================
 
+app.get("/", (c) => {
+  return c.json({ 
+    name: "HiveMI Manager",
+    version: "0.1.0",
+    docs: "/health, /api/status, /api/demands",
+    timestamp: new Date().toISOString() 
+  });
+});
+
 app.get("/health", (c) => {
   return c.json({ status: "ok", service: "manager", timestamp: new Date().toISOString() });
 });

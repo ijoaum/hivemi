@@ -43,7 +43,12 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
   const wsRef = useRef<WebSocket | null>(null);
   const listenersRef = useRef<Map<EventType, Set<(data: unknown) => void>>>(new Map());
 
-  const wsUrl = url || process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4000/ws";
+  // Derive WebSocket URL from window location if in browser, else use env/localhost
+  const wsUrl = url || process.env.NEXT_PUBLIC_WS_URL || (
+    typeof window !== "undefined" 
+      ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/ws`
+      : "ws://localhost:4000/ws"
+  );
 
   useEffect(() => {
     // Skip if no WebSocket support or no URL
