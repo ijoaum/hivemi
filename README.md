@@ -304,11 +304,11 @@ pnpm lint
 | Use Case | License | Cost |
 |----------|---------|------|
 | Personal, Educational, Open Source | AGPL-3.0 | Free |
-| Commercial, Closed-source | [Commercial License](mailto:joao@lana.dev) | Contact |
+| Commercial, Closed-source | [Commercial License](mailto:contato@joaovictor.info) | $999 |
 
-The AGPL license requires you to publish your source code if you use HiveMI in a network service. For commercial use without this obligation, contact for a commercial license.
+The AGPL license requires you to publish your source code if you use HiveMI in a network service. For commercial use without this obligation, purchase a commercial license.
 
-📧 **Questions:** joao@lana.dev
+📧 **Questions:** contato@joaovictor.info
 
 ---
 
