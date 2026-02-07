@@ -1,221 +1,167 @@
-# HiveMI
+# 🐝 HiveMI - Hive Mesh Intelligence
 
-**Hive Mesh Intelligence** — Orquestrador de agentes de IA distribuídos.
+An AI agent orchestration platform where agents work like a dev squad.
 
-```
-╭───────────────────────────────────╮
-│          H I V E M I              │
-│    Hive Mesh Intelligence         │
-│                                   │
-│    🐝 Agentes distribuídos        │
-│    🔗 Comunicação P2P             │
-│    🧠 Inteligência coletiva       │
-╰───────────────────────────────────╯
-```
-
-## O que é?
-
-HiveMI é uma plataforma para criar e orquestrar times de agentes de IA que trabalham juntos como um squad. Cada agente tem um papel específico (PM, Tech Lead, Developer, QA, etc.) e se comunica diretamente com outros agentes via HTTP.
-
-## Arquitetura
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        MANAGER                              │
-│  (ponto de entrada externo, dashboard, não recebe tasks     │
-│   de agentes internos — apenas de humanos/APIs externas)    │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       REGISTRY                              │
-│              (microserviço de discovery)                    │
-│                                                             │
-│  • Lista agentes online e seus endpoints                    │
-│  • Armazena roles disponíveis                               │
-│  • Tracking de status e tasks atuais                        │
-└─────────────────────────────────────────────────────────────┘
-                           ▲
-          ┌────────────────┼────────────────┐
-          │                │                │
-     ┌────┴────┐      ┌────┴────┐      ┌────┴────┐
-     │   PM    │◄────►│  Tech   │◄────►│   Dev   │
-     │  Agent  │      │  Lead   │      │  Agent  │
-     └─────────┘      └─────────┘      └─────────┘
-           ▲                                ▲
-           └────────────────────────────────┘
-                  (comunicação direta P2P)
+┌─────────────────────────────────────────────────────────────────┐
+│                        HiveMI Cluster                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────┐     HTTP      ┌──────────────┐                    │
+│  │ Dashboard ├──────────────►│   Manager    │◄── External Tasks │
+│  │  :3000   │               │    :4000     │                    │
+│  └──────────┘               └──────┬───────┘                    │
+│                                    │                             │
+│                                    ▼                             │
+│                           ┌────────────────┐                     │
+│                           │    Registry    │                     │
+│                           │     :4001      │                     │
+│                           │   PostgreSQL   │                     │
+│                           └────────┬───────┘                     │
+│                                    │                             │
+│              ┌─────────────────────┼─────────────────────┐       │
+│              │                     │                     │       │
+│              ▼                     ▼                     ▼       │
+│      ┌─────────────┐       ┌─────────────┐       ┌───────────┐  │
+│      │  PM Agent   │◄─────►│ Tech Lead   │◄─────►│ Developer │  │
+│      │   :3002     │  P2P  │   :3003     │  P2P  │   :3001   │  │
+│      └─────────────┘       └─────────────┘       └───────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
-
-### Componentes
-
-| Componente | Descrição |
-|------------|-----------|
-| **Manager** | Ponto de entrada para demandas externas. Recebe tasks de humanos/APIs, delega pro agente certo, oferece dashboard de status. |
-| **Registry** | Serviço de discovery. Agentes se registram aqui, consultam quem está online, atualizam status. |
-| **Agent** | Unidade de trabalho. Cada agente tem um role, capabilities, e se comunica diretamente com outros agentes. |
-
-### Conceitos
-
-| Conceito | Descrição |
-|----------|-----------|
-| **Role** | Template de cargo (ex: "Product Manager", "Frontend Developer"). Define system prompt, capabilities, e comportamento. |
-| **Agent** | Instância de um Role. Processo rodando, com endpoint HTTP próprio. Pode haver múltiplos agentes do mesmo Role. |
-| **Task** | Unidade de trabalho com título, descrição, prioridade, owner, e status. |
-| **Message** | Comunicação entre agentes: tasks, perguntas, respostas, handoffs. |
-
-## Fluxo de Trabalho
-
-```
-1. Humano manda demanda → Manager (POST /tasks)
-2. Manager consulta Registry → encontra o PM
-3. Manager delega pro PM (HTTP direto)
-4. PM quebra em subtasks → consulta Registry → encontra devs
-5. PM envia tasks diretamente pros devs (P2P)
-6. Devs trabalham, atualizam status no Registry
-7. Devs terminam → handoff pro QA
-8. QA valida → handoff pro SRE
-9. SRE deploya → notifica PM
-10. PM fecha a demanda → Manager atualiza status
-```
-
-## Stack Técnica
-
-| Categoria | Tecnologia |
-|-----------|------------|
-| Runtime | Node.js 22 |
-| Linguagem | TypeScript 5 |
-| Monorepo | pnpm workspaces |
-| HTTP Framework | Hono |
-| Validação | Zod |
-| Banco de Dados | PostgreSQL |
-| ORM | Drizzle |
-| LLM SDK | Vercel AI SDK |
-| Logs | Pino |
-| Build | tsup |
-| Test | Vitest |
-| Container | Docker + Compose |
-
-## Estrutura do Projeto
-
-```
-hivemi/
-├── docker-compose.yml       # Orquestração local
-├── packages/
-│   ├── protocol/            # Tipos e schemas compartilhados
-│   ├── registry/            # Microserviço de discovery
-│   ├── manager/             # API externa + dashboard
-│   └── agent/               # Lib base para criar agentes
-├── agents/                  # Implementações de agentes
-│   ├── pm/                  # Product Manager
-│   ├── techlead/            # Tech Lead
-│   └── dev/                 # Developer
-└── docs/                    # Documentação adicional
-```
-
-## Protocolo de Comunicação
-
-### Registro de Agente
-
-Ao iniciar, cada agente se registra no Registry:
-
-```http
-POST /agents
-Authorization: Bearer {shared_secret}
-Content-Type: application/json
-
-{
-  "id": "pm-1",
-  "role": "product-manager",
-  "endpoint": "http://localhost:3001",
-  "capabilities": ["break-down-tasks", "prioritize", "user-stories"]
-}
-```
-
-### Mensagem entre Agentes
-
-Comunicação direta P2P:
-
-```http
-POST /message
-Authorization: Bearer {shared_secret}
-Content-Type: application/json
-
-{
-  "id": "msg-uuid",
-  "from": "pm-1",
-  "type": "task",
-  "payload": {
-    "title": "Implementar tela de login",
-    "description": "...",
-    "priority": "high",
-    "context": { ... }
-  },
-  "timestamp": 1707280000
-}
-```
-
-### Tipos de Mensagem
-
-| Tipo | Descrição |
-|------|-----------|
-| `task` | Atribuição de tarefa |
-| `question` | Pergunta para outro agente |
-| `response` | Resposta a uma pergunta |
-| `status` | Atualização de status |
-| `handoff` | Passagem de responsabilidade |
-
-## Autenticação
-
-Modelo simples com shared secret:
-
-- Todos os agentes recebem o mesmo `HIVEMI_SECRET` ao iniciar
-- Toda comunicação (Registry, P2P) inclui header `Authorization: Bearer {secret}`
-- Registry valida antes de aceitar registros/atualizações
-- Agentes validam antes de processar mensagens
 
 ## Quick Start
 
-```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/hivemi.git
-cd hivemi
+### Prerequisites
 
-# Instale dependências
+- Node.js 22+
+- pnpm 9+
+- Docker (for PostgreSQL)
+
+### Setup
+
+```bash
+# Clone and install
+git clone https://github.com/ijoaum/hivemi.git
+cd hivemi
 pnpm install
 
-# Suba a infraestrutura
+# Start PostgreSQL
 docker-compose up -d postgres
 
-# Configure variáveis
-cp .env.example .env
+# Run migrations
+cd apps/registry && pnpm db:migrate
 
-# Rode as migrations
-pnpm db:migrate
-
-# Inicie o Registry
-pnpm --filter registry dev
-
-# Inicie o Manager
-pnpm --filter manager dev
-
-# Inicie um agente
-pnpm --filter agent-pm dev
+# Start services (in separate terminals)
+pnpm --filter @hivemi/registry dev    # Registry on :4001
+pnpm --filter @hivemi/manager dev     # Manager on :4000
+pnpm --filter dashboard dev           # Dashboard on :3000
 ```
 
-## Roadmap
+### Using the CLI
 
-- [x] Definição de arquitetura
-- [ ] Protocol package (tipos e schemas)
-- [ ] Registry service
-- [ ] Manager service
-- [ ] Agent base lib
-- [ ] PM agent
-- [ ] Tech Lead agent
-- [ ] Developer agent
-- [ ] Dashboard web
-- [ ] Métricas e observabilidade
+```bash
+# Check cluster status
+pnpm --filter @hivemi/cli dev status
 
-## Licença
+# List agents
+pnpm --filter @hivemi/cli dev agents list
+
+# Create a task
+pnpm --filter @hivemi/cli dev tasks create "Build login page" --team <team-id> --priority high
+
+# List tasks
+pnpm --filter @hivemi/cli dev tasks list
+```
+
+## Project Structure
+
+```
+hivemi/
+├── apps/
+│   ├── dashboard/        # Next.js 15 + React 19 + Tremor
+│   ├── registry/         # Hono API + Drizzle + PostgreSQL
+│   └── manager/          # Hono API (external interface)
+├── packages/
+│   ├── protocol/         # Shared types + Zod schemas
+│   ├── agent-runtime/    # Base agent framework
+│   ├── llm/              # Vercel AI SDK wrapper
+│   └── cli/              # Command-line interface
+├── agents/
+│   ├── pm/               # Product Manager agent
+│   ├── tech-lead/        # Tech Lead agent
+│   ├── developer/        # Developer agent
+│   └── qa/               # QA Engineer agent
+└── docs/
+```
+
+## Stack
+
+- **Runtime**: Node.js 22, TypeScript 5
+- **Package Manager**: pnpm workspaces
+- **API Framework**: Hono
+- **Database**: PostgreSQL 16 + Drizzle ORM
+- **LLM**: Vercel AI SDK (OpenAI, Anthropic)
+- **Frontend**: Next.js 15, React 19, Tailwind CSS v4, Tremor
+- **Validation**: Zod
+
+## Agent Roles
+
+| Role | Name | Responsibilities |
+|------|------|------------------|
+| 📋 PM | Reginald | Analyzes requirements, creates user stories, prioritizes backlog |
+| 🏗️ Tech Lead | Cornelius | Makes architectural decisions, reviews code, mentors developers |
+| ⚙️ Backend Dev | Bartholomew | Develops APIs, handles database operations |
+| 🧪 QA | Percival | Writes tests, finds bugs, ensures quality |
+
+## Environment Variables
+
+```bash
+# Database
+DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi
+
+# Services
+REGISTRY_URL=http://localhost:4001
+MANAGER_URL=http://localhost:4000
+
+# Auth
+HIVEMI_SECRET=your-shared-secret
+
+# LLM
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+## API Endpoints
+
+### Registry (:4001)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /health | Health check |
+| GET/POST | /api/agents | List/Create agents |
+| GET/PUT/DELETE | /api/agents/:id | Agent CRUD |
+| POST | /api/agents/:id/heartbeat | Agent heartbeat |
+| GET/POST | /api/roles | List/Create roles |
+| GET/POST | /api/tasks | List/Create tasks |
+| POST | /api/tasks/:id/retry | Retry failed task |
+| POST | /api/tasks/:id/cancel | Cancel task |
+| GET/POST | /api/teams | List/Create teams |
+| GET | /api/logs | Get logs |
+
+### Manager (:4000)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /health | Health check |
+| POST | /api/demands | Create external task |
+| GET | /api/status | Cluster status |
+| GET | /api/agents | Proxy to registry |
+| GET | /api/roles | Proxy to registry |
+| GET | /api/teams | Proxy to registry |
+
+## License
 
 MIT
