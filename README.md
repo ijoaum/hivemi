@@ -299,4 +299,4 @@ pnpm lint
 
 ## License
 
-MIT © [João Mendonça](https://github.com/ijoaum)
+MIT © [João Lana](https://github.com/ijoaum)
