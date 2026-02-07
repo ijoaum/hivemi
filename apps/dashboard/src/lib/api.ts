@@ -39,6 +39,22 @@ export interface Agent {
   lastHeartbeat: string | null;
   createdAt: string;
   updatedAt: string;
+  // Populated from JOIN
+  role?: {
+    id: string;
+    name: string;
+    slug: string;
+    icon: string;
+    color: string;
+    description: string;
+    capabilities: string[];
+  } | null;
+  team?: {
+    id: string;
+    name: string;
+    emoji: string;
+    color: string;
+  } | null;
 }
 
 export const agentsApi = {
@@ -144,6 +160,9 @@ export const tasksApi = {
   }),
   cancel: (id: string) => fetchApi<Task>(`/api/tasks/${id}/cancel`, {
     method: "POST",
+  }),
+  delete: (id: string) => fetchApi<Task>(`/api/tasks/${id}`, {
+    method: "DELETE",
   }),
 };
 

@@ -9,7 +9,7 @@ export const mockRoles: Role[] = [
     icon: "clipboard-list",
     color: "blue",
     capabilities: ["requirement-analysis", "story-creation", "backlog-prioritization", "stakeholder-communication"],
-    systemPromptPreview: "You are a Product Manager agent. Your role is to understand user needs, break down requirements into actionable stories...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Product Manager agent. Your role is to understand user needs, break down requirements into actionable stories...",
     agentCount: 1,
   },
   {
@@ -20,7 +20,7 @@ export const mockRoles: Role[] = [
     icon: "blocks",
     color: "purple",
     capabilities: ["architecture-design", "code-review", "technical-decisions", "mentoring"],
-    systemPromptPreview: "You are a Tech Lead agent. Your responsibility is to ensure code quality, make architectural decisions...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Tech Lead agent. Your responsibility is to ensure code quality, make architectural decisions...",
     agentCount: 1,
   },
   {
@@ -31,7 +31,7 @@ export const mockRoles: Role[] = [
     icon: "palette",
     color: "cyan",
     capabilities: ["react-development", "css-styling", "component-design", "accessibility"],
-    systemPromptPreview: "You are a Frontend Developer agent. You specialize in building beautiful, accessible user interfaces...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Frontend Developer agent. You specialize in building beautiful, accessible user interfaces...",
     agentCount: 2,
   },
   {
@@ -42,7 +42,7 @@ export const mockRoles: Role[] = [
     icon: "cog",
     color: "green",
     capabilities: ["api-development", "database-design", "business-logic", "performance-optimization"],
-    systemPromptPreview: "You are a Backend Developer agent. You build robust APIs, design efficient database schemas...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Backend Developer agent. You build robust APIs, design efficient database schemas...",
     agentCount: 2,
   },
   {
@@ -53,7 +53,7 @@ export const mockRoles: Role[] = [
     icon: "flask-conical",
     color: "amber",
     capabilities: ["test-writing", "bug-detection", "quality-assurance", "test-automation"],
-    systemPromptPreview: "You are a QA Engineer agent. Your mission is to ensure software quality through comprehensive testing...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a QA Engineer agent. Your mission is to ensure software quality through comprehensive testing...",
     agentCount: 2,
   },
   {
@@ -64,7 +64,7 @@ export const mockRoles: Role[] = [
     icon: "rocket",
     color: "red",
     capabilities: ["deployment", "monitoring", "infrastructure", "incident-response"],
-    systemPromptPreview: "You are an SRE agent. You ensure system reliability, manage deployments, and respond to incidents...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are an SRE agent. You ensure system reliability, manage deployments, and respond to incidents...",
     agentCount: 1,
   },
   {
@@ -75,7 +75,7 @@ export const mockRoles: Role[] = [
     icon: "sparkles",
     color: "pink",
     capabilities: ["visual-design", "prototyping", "design-systems", "user-research"],
-    systemPromptPreview: "You are a Designer agent. You create beautiful, intuitive designs that solve user problems...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Designer agent. You create beautiful, intuitive designs that solve user problems...",
     agentCount: 0,
   },
   {
@@ -86,7 +86,7 @@ export const mockRoles: Role[] = [
     icon: "bar-chart-3",
     color: "indigo",
     capabilities: ["data-analysis", "reporting", "visualization", "insights"],
-    systemPromptPreview: "You are a Data Analyst agent. You analyze data patterns, create insightful reports...",
+    systemPrompt: "You are a placeholder prompt.", systemPromptPreview: "You are a Data Analyst agent. You analyze data patterns, create insightful reports...",
     agentCount: 0,
   },
 ];

@@ -3,10 +3,13 @@
 import { Role } from "@/types/role";
 import { RoleIcon } from "@/components/role-icon";
 import { cn } from "@/lib/utils";
+import { Pencil, Trash2 } from "lucide-react";
 
 interface RoleCardProps {
   role: Role;
   onClick?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 const colorClasses: Record<string, { bg: string; border: string; text: string }> = {
@@ -20,17 +23,18 @@ const colorClasses: Record<string, { bg: string; border: string; text: string }>
   indigo: { bg: "bg-indigo-500/10", border: "border-indigo-500/30", text: "text-indigo-400" },
 };
 
-export function RoleCard({ role, onClick }: RoleCardProps) {
+export function RoleCard({ role, onClick, onEdit, onDelete }: RoleCardProps) {
   const colors = colorClasses[role.color] || colorClasses.blue;
 
   return (
     <div
       onClick={onClick}
       className={cn(
-        "rounded-xl p-6 cursor-pointer transition-all",
+        "rounded-xl p-6 transition-all group",
         "border hover:scale-[1.02]",
         colors.bg,
-        colors.border
+        colors.border,
+        onClick && "cursor-pointer"
       )}
     >
       {/* Header */}
@@ -44,9 +48,34 @@ export function RoleCard({ role, onClick }: RoleCardProps) {
             <p className="text-sm text-gray-500">@{role.slug}</p>
           </div>
         </div>
-        <div className="text-right">
-          <div className={cn("text-2xl font-bold", colors.text)}>{role.agentCount}</div>
-          <div className="text-xs text-gray-500">agents</div>
+        <div className="flex items-center gap-2">
+          {/* Edit/Delete buttons - visible on hover */}
+          {(onEdit || onDelete) && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {onEdit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="p-1.5 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-white transition-colors"
+                  title="Edit role"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
+                  title="Delete role"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="text-right ml-2">
+            <div className={cn("text-2xl font-bold", colors.text)}>{role.agentCount}</div>
+            <div className="text-xs text-gray-500">agents</div>
+          </div>
         </div>
       </div>
 
@@ -77,7 +106,7 @@ export function RoleCard({ role, onClick }: RoleCardProps) {
       <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-800">
         <p className="text-xs text-gray-500 mb-1">System Prompt</p>
         <p className="text-xs text-gray-400 font-mono line-clamp-2">
-          {role.systemPromptPreview}
+          {role.systemPrompt || role.systemPromptPreview}
         </p>
       </div>
     </div>

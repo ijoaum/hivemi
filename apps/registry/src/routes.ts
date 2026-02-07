@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { db, agents, roles, teams, tasks, logs } from "./db/index.js";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 import { 
   CreateAgentSchema, 
@@ -127,7 +127,39 @@ app.delete("/api/roles/:id", async (c) => {
 
 app.get("/api/agents", async (c) => {
   try {
-    const result = await db.select().from(agents);
+    const result = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        roleId: agents.roleId,
+        teamId: agents.teamId,
+        status: agents.status,
+        model: agents.model,
+        host: agents.host,
+        port: agents.port,
+        currentTaskId: agents.currentTaskId,
+        lastHeartbeat: agents.lastHeartbeat,
+        createdAt: agents.createdAt,
+        updatedAt: agents.updatedAt,
+        role: {
+          id: roles.id,
+          name: roles.name,
+          slug: roles.slug,
+          icon: roles.icon,
+          color: roles.color,
+          description: roles.description,
+          capabilities: roles.capabilities,
+        },
+        team: {
+          id: teams.id,
+          name: teams.name,
+          emoji: teams.emoji,
+          color: teams.color,
+        },
+      })
+      .from(agents)
+      .leftJoin(roles, eq(agents.roleId, roles.id))
+      .leftJoin(teams, eq(agents.teamId, teams.id));
     return c.json({ success: true, data: result });
   } catch (error) {
     logger.error(error, "Failed to fetch agents");
@@ -138,7 +170,40 @@ app.get("/api/agents", async (c) => {
 app.get("/api/agents/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    const result = await db.select().from(agents).where(eq(agents.id, id));
+    const result = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        roleId: agents.roleId,
+        teamId: agents.teamId,
+        status: agents.status,
+        model: agents.model,
+        host: agents.host,
+        port: agents.port,
+        currentTaskId: agents.currentTaskId,
+        lastHeartbeat: agents.lastHeartbeat,
+        createdAt: agents.createdAt,
+        updatedAt: agents.updatedAt,
+        role: {
+          id: roles.id,
+          name: roles.name,
+          slug: roles.slug,
+          icon: roles.icon,
+          color: roles.color,
+          description: roles.description,
+          capabilities: roles.capabilities,
+        },
+        team: {
+          id: teams.id,
+          name: teams.name,
+          emoji: teams.emoji,
+          color: teams.color,
+        },
+      })
+      .from(agents)
+      .leftJoin(roles, eq(agents.roleId, roles.id))
+      .leftJoin(teams, eq(agents.teamId, teams.id))
+      .where(eq(agents.id, id));
     if (result.length === 0) {
       return c.json({ success: false, error: "Agent not found" }, 404);
     }
@@ -218,12 +283,19 @@ app.post("/api/agents/:id/heartbeat", async (c) => {
 
 app.get("/api/tasks", async (c) => {
   try {
-    // Query params for future filtering
-    void c.req.query("status");
-    void c.req.query("teamId");
+    const status = c.req.query("status");
+    const teamId = c.req.query("teamId");
     
-    // TODO: Add filtering by status and teamId
-    const result = await db.select().from(tasks);
+    let query = db.select().from(tasks).orderBy(desc(tasks.createdAt)).$dynamic();
+    
+    if (status) {
+      query = query.where(eq(tasks.status, status as any));
+    }
+    if (teamId) {
+      query = query.where(eq(tasks.teamId, teamId));
+    }
+    
+    const result = await query;
     return c.json({ success: true, data: result });
   } catch (error) {
     logger.error(error, "Failed to fetch tasks");
@@ -312,6 +384,21 @@ app.post("/api/tasks/:id/cancel", async (c) => {
   }
 });
 
+app.delete("/api/tasks/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const result = await db.delete(tasks).where(eq(tasks.id, id)).returning();
+    if (result.length === 0) {
+      return c.json({ success: false, error: "Task not found" }, 404);
+    }
+    logger.info({ taskId: id }, "Task deleted");
+    return c.json({ success: true, data: result[0] });
+  } catch (error) {
+    logger.error(error, "Failed to delete task");
+    return c.json({ success: false, error: "Failed to delete task" }, 500);
+  }
+});
+
 // =============================================================================
 // LOGS
 // =============================================================================
@@ -319,7 +406,7 @@ app.post("/api/tasks/:id/cancel", async (c) => {
 app.get("/api/logs", async (c) => {
   try {
     const limit = parseInt(c.req.query("limit") || "100");
-    const result = await db.select().from(logs).limit(limit);
+    const result = await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(limit);
     return c.json({ success: true, data: result });
   } catch (error) {
     logger.error(error, "Failed to fetch logs");

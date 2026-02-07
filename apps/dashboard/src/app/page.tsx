@@ -73,7 +73,7 @@ export default function Home() {
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const rolesFetcher = useCallback(() => rolesApi.list(), []);
   
-  const { data: apiAgents, loading: agentsLoading } = useApi(agentsFetcher, { refetchInterval: 5000 });
+  const { data: apiAgents, loading: agentsLoading, refetch: refetchAgents } = useApi(agentsFetcher, { refetchInterval: 5000 });
   const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000 });
   const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000 });
 
@@ -83,12 +83,11 @@ export default function Home() {
   const agents = useMemo(() => {
     if (!apiAgents?.length) return [];
     return apiAgents.map(a => {
-      const role = apiRoles?.find(r => r.id === a.roleId);
       return {
         id: a.id,
         name: a.name,
-        role: role?.name || "Agent",
-        roleIcon: role?.icon || "bot",
+        role: a.role?.name || "Agent",
+        roleIcon: a.role?.icon || "bot",
         team: a.teamId,
         teamId: a.teamId,
         status: a.status,
@@ -99,7 +98,7 @@ export default function Home() {
         model: a.model,
       };
     });
-  }, [apiAgents, apiRoles]);
+  }, [apiAgents]);
 
   // Calculate stats from agents
   const stats = useMemo(() => ({
@@ -120,21 +119,17 @@ export default function Home() {
   };
 
   const handleDeploy = async (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {
-    console.log("Deploying agent:", data);
-    try {
-      await agentsApi.create({
-        name: data.name,
-        roleId: data.roleId,
-        teamId: data.teamId,
-        model: data.model,
-        host: "http://localhost",
-        port: 3001 + Math.floor(Math.random() * 100),
-        status: data.autoStart ? "idle" : "offline",
-      });
-      setIsDeployModalOpen(false);
-    } catch (err) {
-      console.error("Failed to deploy agent:", err);
-    }
+    await agentsApi.create({
+      name: data.name,
+      roleId: data.roleId,
+      teamId: data.teamId,
+      model: data.model,
+      host: "http://localhost",
+      port: 3001 + Math.floor(Math.random() * 100),
+      status: data.autoStart ? "idle" : "offline",
+    });
+    // Immediately refetch to show new agent
+    await refetchAgents();
   };
 
   return (

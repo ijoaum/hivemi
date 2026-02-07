@@ -4,7 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { useApi } from "@/hooks/use-api";
-import { agentsApi, rolesApi, teamsApi, tasksApi, logsApi } from "@/lib/api";
+import { agentsApi, tasksApi, logsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const statusColors: Record<string, string> = {
@@ -29,19 +29,16 @@ export default function AgentDetailPage() {
   const agentId = params.id as string;
 
   const agentFetcher = useCallback(() => agentsApi.get(agentId), [agentId]);
-  const rolesFetcher = useCallback(() => rolesApi.list(), []);
-  const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const tasksFetcher = useCallback(() => tasksApi.list(), []);
   const logsFetcher = useCallback(() => logsApi.list({ limit: 50 }), []);
 
   const { data: agent, error: agentError, isLoading } = useApi(agentFetcher, { refetchInterval: 5000 });
-  const { data: roles } = useApi(rolesFetcher);
-  const { data: teams } = useApi(teamsFetcher);
   const { data: allTasks } = useApi(tasksFetcher, { refetchInterval: 5000 });
   const { data: allLogs } = useApi(logsFetcher, { refetchInterval: 5000 });
 
-  const role = useMemo(() => roles?.find(r => r.id === agent?.roleId), [roles, agent]);
-  const team = useMemo(() => teams?.find(t => t.id === agent?.teamId), [teams, agent]);
+  // Use populated role/team from agent, fallback to separate lookups not needed
+  const role = useMemo(() => agent?.role || null, [agent]);
+  const team = useMemo(() => agent?.team || null, [agent]);
   const agentTasks = useMemo(() => allTasks?.filter(t => t.agentId === agentId) || [], [allTasks, agentId]);
   const agentLogs = useMemo(() => allLogs?.filter(l => l.agentId === agentId) || [], [allLogs, agentId]);
 
