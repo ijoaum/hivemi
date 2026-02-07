@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TaskCard } from "@/components/task-card";
 import { TaskFilters } from "@/components/task-filters";
+import { useApi } from "@/hooks/use-api";
+import { tasksApi, teamsApi, type Task } from "@/lib/api";
 import { mockTasks } from "@/data/mock-tasks";
 import { TaskStatus } from "@/types/task";
 
@@ -11,22 +13,74 @@ export default function TasksPage() {
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | "all">("all");
   const [selectedTeam, setSelectedTeam] = useState<string | "all">("all");
 
+  // Fetch from API
+  const tasksFetcher = useCallback(() => tasksApi.list(), []);
+  const teamsFetcher = useCallback(() => teamsApi.list(), []);
+  
+  const { data: apiTasks, error: tasksError, refetch: refetchTasks } = useApi(tasksFetcher, { refetchInterval: 5000 });
+  const { data: apiTeams } = useApi(teamsFetcher);
+
+  // Convert API tasks to display format or fall back to mock
+  const tasks = useMemo(() => {
+    if (tasksError || !apiTasks?.length) {
+      return mockTasks;
+    }
+    return apiTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      description: t.description || "",
+      status: t.status as TaskStatus,
+      priority: t.priority,
+      assignedTo: t.agentId || undefined,
+      teamId: t.teamId,
+      teamName: apiTeams?.find(team => team.id === t.teamId)?.name || "Unknown",
+      teamEmoji: apiTeams?.find(team => team.id === t.teamId)?.emoji || "🐝",
+      progress: t.status === "running" ? 50 : t.status === "completed" ? 100 : 0,
+      createdAt: t.createdAt,
+      startedAt: t.startedAt || undefined,
+      completedAt: t.completedAt || undefined,
+      error: t.error || undefined,
+    }));
+  }, [apiTasks, apiTeams, tasksError]);
+
   // Get unique teams
-  const teams = [...new Set(mockTasks.map((t) => t.teamName))];
+  const teams = useMemo(() => {
+    return [...new Set(tasks.map((t) => t.teamName))];
+  }, [tasks]);
 
   // Filter tasks
-  const filteredTasks = mockTasks.filter((task) => {
-    if (selectedStatus !== "all" && task.status !== selectedStatus) return false;
-    if (selectedTeam !== "all" && task.teamName !== selectedTeam) return false;
-    return true;
-  });
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      if (selectedStatus !== "all" && task.status !== selectedStatus) return false;
+      if (selectedTeam !== "all" && task.teamName !== selectedTeam) return false;
+      return true;
+    });
+  }, [tasks, selectedStatus, selectedTeam]);
 
   // Group by status for counts
-  const statusCounts = {
-    queued: mockTasks.filter((t) => t.status === "queued").length,
-    running: mockTasks.filter((t) => t.status === "running").length,
-    completed: mockTasks.filter((t) => t.status === "completed").length,
-    failed: mockTasks.filter((t) => t.status === "failed").length,
+  const statusCounts = useMemo(() => ({
+    queued: tasks.filter((t) => t.status === "queued").length,
+    running: tasks.filter((t) => t.status === "running").length,
+    completed: tasks.filter((t) => t.status === "completed").length,
+    failed: tasks.filter((t) => t.status === "failed").length,
+  }), [tasks]);
+
+  const handleRetry = async (taskId: string) => {
+    try {
+      await tasksApi.retry(taskId);
+      refetchTasks();
+    } catch (err) {
+      console.error("Failed to retry task:", err);
+    }
+  };
+
+  const handleCancel = async (taskId: string) => {
+    try {
+      await tasksApi.cancel(taskId);
+      refetchTasks();
+    } catch (err) {
+      console.error("Failed to cancel task:", err);
+    }
   };
 
   return (
@@ -36,7 +90,10 @@ export default function TasksPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Tasks</h1>
-          <p className="text-gray-400">Monitor and manage agent tasks</p>
+          <p className="text-gray-400">
+            Monitor and manage agent tasks
+            {tasksError && <span className="text-amber-500 ml-2">(using mock data)</span>}
+          </p>
         </div>
 
         {/* Stats */}
@@ -71,7 +128,12 @@ export default function TasksPage() {
         {/* Task list */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredTasks.map((task) => (
-            <TaskCard key={task.id} task={task} />
+            <TaskCard 
+              key={task.id} 
+              task={task}
+              onRetry={() => handleRetry(task.id)}
+              onCancel={() => handleCancel(task.id)}
+            />
           ))}
         </div>
 

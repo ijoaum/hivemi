@@ -1,0 +1,37 @@
+{
+  "name": "hivemi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hive Mesh Intelligence - AI agent orchestration platform",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' --filter './packages/*' dev",
+    "dev:registry": "pnpm --filter @hivemi/registry dev",
+    "dev:manager": "pnpm --filter @hivemi/manager dev",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "build": "pnpm --filter './packages/*' build && pnpm --filter './apps/*' build",
+    "lint": "pnpm --parallel --filter './apps/*' --filter './packages/*' lint",
+    "test": "pnpm --filter @hivemi/tests test",
+    "test:e2e": "pnpm --filter @hivemi/tests test:e2e",
+    "clean": "pnpm --parallel --filter './apps/*' --filter './packages/*' clean",
+    "db:generate": "pnpm --filter @hivemi/registry db:generate",
+    "db:migrate": "pnpm --filter @hivemi/registry db:migrate",
+    "db:studio": "pnpm --filter @hivemi/registry db:studio",
+    "typecheck": "pnpm --parallel --filter './apps/*' --filter './packages/*' typecheck",
+    "cli": "pnpm --filter @hivemi/cli dev"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestration",
+    "distributed",
+    "p2p",
+    "llm"
+  ],
+  "author": "João Almeida",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
