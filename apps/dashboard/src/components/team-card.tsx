@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Pencil, Trash2, Users } from "lucide-react";
+import { RoleIcon } from "@/components/role-icon";
 import type { Team } from "@/lib/api";
 
 interface TeamCardProps {
@@ -37,8 +38,8 @@ export function TeamCard({ team, agentCount, onEdit, onDelete }: TeamCardProps) 
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className={cn("text-3xl p-2 rounded-lg", colors.bg)}>
-            {team.emoji}
+          <div className={cn("p-2 rounded-lg", colors.bg, colors.text)}>
+            <RoleIcon icon={team.emoji} className="w-7 h-7" />
           </div>
           <div>
             <h3 className={cn("text-lg font-semibold", colors.text)}>{team.name}</h3>

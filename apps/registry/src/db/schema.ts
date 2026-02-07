@@ -10,7 +10,7 @@ export const logLevelEnum = pgEnum("log_level", ["debug", "info", "warn", "error
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 100 }).notNull(),
-  emoji: varchar("emoji", { length: 10 }).notNull(),
+  emoji: varchar("emoji", { length: 50 }).notNull(),
   color: varchar("color", { length: 20 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

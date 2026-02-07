@@ -214,7 +214,7 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: De
             >
               {teams.map((team) => (
                 <option key={team.id} value={team.id}>
-                  {team.emoji} {team.name}
+                  {team.name}
                 </option>
               ))}
             </select>

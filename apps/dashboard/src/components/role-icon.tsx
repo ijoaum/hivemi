@@ -13,6 +13,16 @@ import {
   Database,
   Shield,
   Zap,
+  Network,
+  Globe,
+  Server,
+  Wrench,
+  Target,
+  Lightbulb,
+  Package,
+  Layers,
+  GitBranch,
+  Terminal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +42,16 @@ const iconMap: Record<string, LucideIcon> = {
   "database": Database,
   "shield": Shield,
   "zap": Zap,
+  "network": Network,
+  "globe": Globe,
+  "server": Server,
+  "wrench": Wrench,
+  "target": Target,
+  "lightbulb": Lightbulb,
+  "package": Package,
+  "layers": Layers,
+  "git-branch": GitBranch,
+  "terminal": Terminal,
 };
 
 interface RoleIconProps {

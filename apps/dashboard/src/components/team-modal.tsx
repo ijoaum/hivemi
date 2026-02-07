@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { X, Loader2, Save } from "lucide-react";
+import { RoleIcon, iconMap } from "@/components/role-icon";
 
 interface TeamModalProps {
   isOpen: boolean;
@@ -14,7 +15,7 @@ interface TeamModalProps {
 
 export interface TeamFormData {
   name: string;
-  emoji: string;
+  emoji: string; // stores icon name (e.g. "blocks", "rocket")
   color: string;
 }
 
@@ -40,25 +41,22 @@ const colorClasses: Record<string, string> = {
   indigo: "bg-indigo-500",
 };
 
-const emojiSuggestions = [
-  "🏗️", "🎯", "🔧", "🚀", "💡", "🛡️", "📦", "🌐",
-  "⚡", "🎨", "🔬", "📊", "🤖", "🔥", "💎", "🧩",
-];
+const iconOptions = Object.keys(iconMap);
 
 export function TeamModal({ isOpen, onClose, onSave, team, mode }: TeamModalProps) {
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("🏗️");
+  const [icon, setIcon] = useState("blocks");
   const [color, setColor] = useState("blue");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (team) {
       setName(team.name);
-      setEmoji(team.emoji);
+      setIcon(team.emoji);
       setColor(team.color);
     } else {
       setName("");
-      setEmoji("🏗️");
+      setIcon("blocks");
       setColor("blue");
     }
   }, [team, isOpen]);
@@ -69,7 +67,7 @@ export function TeamModal({ isOpen, onClose, onSave, team, mode }: TeamModalProp
     e.preventDefault();
     setIsSaving(true);
     try {
-      await onSave({ name, emoji, color });
+      await onSave({ name, emoji: icon, color });
       onClose();
     } finally {
       setIsSaving(false);
@@ -105,35 +103,24 @@ export function TeamModal({ isOpen, onClose, onSave, team, mode }: TeamModalProp
             />
           </div>
 
-          {/* Emoji */}
+          {/* Icon */}
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Emoji</label>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="text-4xl p-2 bg-gray-800 rounded-lg border border-gray-700 min-w-[60px] text-center">
-                {emoji}
-              </div>
-              <input
-                type="text"
-                value={emoji}
-                onChange={(e) => setEmoji(e.target.value)}
-                className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-center focus:outline-none focus:border-amber-500 transition-colors"
-                maxLength={4}
-              />
-            </div>
+            <label className="block text-sm text-gray-400 mb-2">Icon</label>
             <div className="flex flex-wrap gap-2">
-              {emojiSuggestions.map((e) => (
+              {iconOptions.map((iconName) => (
                 <button
-                  key={e}
+                  key={iconName}
                   type="button"
-                  onClick={() => setEmoji(e)}
+                  onClick={() => setIcon(iconName)}
                   className={cn(
-                    "text-xl p-2 rounded-lg border transition-all hover:scale-110",
-                    emoji === e
-                      ? "bg-amber-500/20 border-amber-500"
-                      : "bg-gray-800 border-gray-700 hover:border-gray-600"
+                    "p-2.5 rounded-lg border transition-all",
+                    icon === iconName
+                      ? "bg-amber-500/20 border-amber-500 text-amber-400"
+                      : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
                   )}
+                  title={iconName}
                 >
-                  {e}
+                  <RoleIcon icon={iconName} className="w-5 h-5" />
                 </button>
               ))}
             </div>
@@ -172,10 +159,10 @@ export function TeamModal({ isOpen, onClose, onSave, team, mode }: TeamModalProp
             </button>
             <button
               type="submit"
-              disabled={!name || !emoji || isSaving}
+              disabled={!name || isSaving}
               className={cn(
                 "flex-1 px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
-                name && emoji && !isSaving
+                name && !isSaving
                   ? "bg-amber-500 hover:bg-amber-600 text-black"
                   : "bg-gray-700 text-gray-500 cursor-not-allowed"
               )}

@@ -133,7 +133,7 @@ export function CreateTaskModal({ isOpen, onClose, onCreated }: CreateTaskModalP
               <option value="">Select a team...</option>
               {teams?.map((team) => (
                 <option key={team.id} value={team.id}>
-                  {team.emoji} {team.name}
+                  {team.name}
                 </option>
               ))}
             </select>

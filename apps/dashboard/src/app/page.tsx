@@ -8,6 +8,7 @@ import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { RoleIcon } from "@/components/role-icon";
 
 const teamColors: Record<string, string> = {
   amber: "border-amber-300 dark:border-amber-700 bg-gradient-to-br from-white via-amber-50 to-amber-100 dark:from-amber-900/40 dark:via-amber-950/30 dark:to-amber-900/20 shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.8),inset_0_-1px_2px_0_rgba(0,0,0,0.05),0_4px_12px_0_rgba(0,0,0,0.08)] dark:shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.15),inset_0_-1px_2px_0_rgba(0,0,0,0.2),0_4px_12px_0_rgba(0,0,0,0.3)]",
@@ -205,7 +206,9 @@ export default function Home() {
               <div key={team.id}>
                 {/* Team Header */}
                 <div className="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
-                  <span className="text-xl md:text-2xl">{team.emoji}</span>
+                  <div className={cn("p-1.5 rounded-lg", teamHeaderColors[team.color] || "text-gray-700")}>
+                    <RoleIcon icon={team.emoji} className="w-5 h-5 md:w-6 md:h-6" />
+                  </div>
                   <h2 className={cn("text-lg md:text-xl font-bold", teamHeaderColors[team.color] || "text-gray-700")}>
                     {team.name}
                   </h2>
