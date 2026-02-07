@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
 import { Sidebar } from "@/components/sidebar";
+import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { mockAgents, getAgentsByTeam } from "@/data/mock-agents";
 import { teams } from "@/types/agent";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,13 @@ const teamHeaderColors: Record<string, string> = {
 };
 
 export default function Home() {
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+
+  const handleDeploy = (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {
+    console.log("Deploying agent:", data);
+    // TODO: Call API to deploy agent
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-gray-950">
       <Sidebar />
@@ -41,7 +50,9 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <StatusBar agents={mockAgents} />
             
-            <button className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
+            <button 
+              onClick={() => setIsDeployModalOpen(true)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
                              font-medium rounded-lg transition-colors flex items-center gap-2">
               <span>+</span>
               Deploy Agent
@@ -111,6 +122,13 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Deploy Modal */}
+      <DeployAgentModal
+        isOpen={isDeployModalOpen}
+        onClose={() => setIsDeployModalOpen(false)}
+        onDeploy={handleDeploy}
+      />
     </div>
   );
 }
