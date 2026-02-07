@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface UseApiOptions<T> {
   initialData?: T;
@@ -11,6 +11,7 @@ interface UseApiResult<T> {
   data: T | undefined;
   error: Error | null;
   isLoading: boolean;
+  loading: boolean; // alias for isLoading - only true on first load
   refetch: () => Promise<void>;
 }
 
@@ -21,13 +22,18 @@ export function useApi<T>(
   const [data, setData] = useState<T | undefined>(options.initialData);
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(!options.initialData);
+  const hasFetchedOnce = useRef(false);
 
   const refetch = useCallback(async () => {
     try {
-      setIsLoading(true);
+      // Only show loading on first fetch
+      if (!hasFetchedOnce.current) {
+        setIsLoading(true);
+      }
       setError(null);
       const result = await fetcher();
       setData(result);
+      hasFetchedOnce.current = true;
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Unknown error"));
     } finally {
@@ -44,5 +50,5 @@ export function useApi<T>(
     }
   }, [refetch, options.refetchInterval]);
 
-  return { data, error, isLoading, refetch };
+  return { data, error, isLoading, loading: isLoading, refetch };
 }

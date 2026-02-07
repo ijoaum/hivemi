@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { Sidebar } from "@/components/sidebar";
+import { AppLayout } from "@/components/app-layout";
 import { RoleCard } from "@/components/role-card";
 import { useApi } from "@/hooks/use-api";
 import { rolesApi, agentsApi } from "@/lib/api";
 import { mockRoles } from "@/data/mock-roles";
+import type { Role } from "@/types/role";
 
 export default function RolesPage() {
   // Fetch from API
@@ -42,46 +43,44 @@ export default function RolesPage() {
   }, [roles]);
 
   return (
-    <div className="flex min-h-screen bg-gray-950">
-      <Sidebar />
-      <main className="flex-1 p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Roles</h1>
-            <p className="text-gray-400">
-              Define agent behaviors and capabilities
-              {rolesError && <span className="text-amber-500 ml-2">(using mock data)</span>}
-            </p>
-          </div>
-          <button className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-medium rounded-lg transition-colors">
-            + New Role
-          </button>
+    <AppLayout>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Roles</h1>
+          <p className="text-sm md:text-base text-gray-400">
+            Define agent behaviors and capabilities
+            {rolesError && <span className="text-amber-500 ml-2">(using mock data)</span>}
+          </p>
         </div>
+        <button className="px-3 md:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-medium rounded-lg transition-colors flex items-center gap-2">
+          <span>+</span>
+          <span className="hidden sm:inline">New Role</span>
+        </button>
+      </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-white">{roles.length}</div>
-            <div className="text-sm text-gray-500">Total Roles</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-green-400">{activeRoles}</div>
-            <div className="text-sm text-gray-500">Active Roles</div>
-          </div>
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-amber-400">{totalAgents}</div>
-            <div className="text-sm text-gray-500">Total Agents</div>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 md:p-4">
+          <div className="text-xl md:text-2xl font-bold text-white">{roles.length}</div>
+          <div className="text-xs md:text-sm text-gray-500">Total Roles</div>
         </div>
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 md:p-4">
+          <div className="text-xl md:text-2xl font-bold text-green-400">{activeRoles}</div>
+          <div className="text-xs md:text-sm text-gray-500">Active</div>
+        </div>
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 md:p-4">
+          <div className="text-xl md:text-2xl font-bold text-amber-400">{totalAgents}</div>
+          <div className="text-xs md:text-sm text-gray-500">Agents</div>
+        </div>
+      </div>
 
-        {/* Roles grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {roles.map((role) => (
-            <RoleCard key={role.id} role={role} />
-          ))}
-        </div>
-      </main>
-    </div>
+      {/* Roles grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+        {roles.map((role) => (
+          <RoleCard key={role.id} role={role as Role} />
+        ))}
+      </div>
+    </AppLayout>
   );
 }
