@@ -2,15 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 
-// Mock roles for demo/development
+// Emoji to Lucide icon name mapping
+const emojiToLucideMap: Record<string, string> = {
+  "📋": "clipboard-list",
+  "🏗️": "blocks",
+  "🎨": "palette",
+  "⚙️": "cog",
+  "🧪": "flask-conical",
+  "🚀": "rocket",
+  "✨": "sparkles",
+  "📊": "bar-chart-3",
+  "👨‍💻": "code",
+  "💻": "code",
+  "🔧": "cog",
+  "🚨": "shield",
+  "👥": "users",
+};
+
+function convertEmojiToLucide(icon: string): string {
+  return emojiToLucideMap[icon] || icon;
+}
+
+// Mock roles for demo/development - using Lucide icon names
 const mockRoles = [
   {
     id: "role-tech-lead",
     name: "Tech Lead",
     slug: "tech-lead",
     description: "Reviews code, makes architectural decisions, mentors developers",
-    icon: "👨‍💻",
-    color: "blue",
+    icon: "blocks",
+    color: "purple",
     capabilities: ["code-review", "architecture", "mentoring"],
     systemPrompt: "You are a senior tech lead...",
     createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
@@ -21,7 +42,7 @@ const mockRoles = [
     name: "Developer",
     slug: "developer",
     description: "Writes code, implements features, fixes bugs",
-    icon: "💻",
+    icon: "code",
     color: "green",
     capabilities: ["coding", "debugging", "testing"],
     systemPrompt: "You are a skilled software developer...",
@@ -33,8 +54,8 @@ const mockRoles = [
     name: "QA Engineer",
     slug: "qa",
     description: "Tests features, writes test cases, ensures quality",
-    icon: "🧪",
-    color: "purple",
+    icon: "flask-conical",
+    color: "amber",
     capabilities: ["testing", "automation", "bug-reporting"],
     systemPrompt: "You are a QA engineer focused on quality...",
     createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
@@ -45,8 +66,8 @@ const mockRoles = [
     name: "DevOps",
     slug: "devops",
     description: "Manages infrastructure, CI/CD, deployments",
-    icon: "🔧",
-    color: "orange",
+    icon: "cog",
+    color: "cyan",
     capabilities: ["infrastructure", "ci-cd", "monitoring"],
     systemPrompt: "You are a DevOps engineer...",
     createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
@@ -57,10 +78,22 @@ const mockRoles = [
     name: "SRE",
     slug: "sre",
     description: "Site reliability, monitoring, incident response",
-    icon: "🚨",
+    icon: "rocket",
     color: "red",
     capabilities: ["monitoring", "incident-response", "reliability"],
     systemPrompt: "You are a site reliability engineer...",
+    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "role-pm",
+    name: "Product Manager",
+    slug: "pm",
+    description: "Analyzes requirements, creates user stories, prioritizes backlog",
+    icon: "clipboard-list",
+    color: "blue",
+    capabilities: ["requirement-analysis", "story-creation", "prioritization"],
+    systemPrompt: "You are a product manager...",
     createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -75,7 +108,12 @@ export async function GET(request: NextRequest) {
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.data?.length > 0) {
-        return NextResponse.json(data);
+        // Convert emoji icons to Lucide icon names
+        const rolesWithLucideIcons = data.data.map((role: any) => ({
+          ...role,
+          icon: convertEmojiToLucide(role.icon),
+        }));
+        return NextResponse.json({ success: true, data: rolesWithLucideIcons });
       }
     }
   } catch (error) {

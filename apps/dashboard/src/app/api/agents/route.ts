@@ -12,13 +12,13 @@ const teamNameMap: Record<string, string> = {
 // Base mock agents (teamId will be resolved)
 const baseMockAgents = [
   { id: "agent-001", name: "Bartholomew", roleId: "role-tech-lead", teamName: "HiveMI", status: "working", model: "gpt-4o", port: 5001, currentTaskId: "task-042" },
-  { id: "agent-002", name: "Cornelius", roleId: "role-developer", teamName: "HiveMI", status: "working", model: "gpt-4o", port: 5002, currentTaskId: "task-043" },
-  { id: "agent-003", name: "Reginald", roleId: "role-developer", teamName: "HiveMI", status: "working", model: "claude-3-5-sonnet", port: 5003, currentTaskId: "task-044" },
-  { id: "agent-004", name: "Penelope", roleId: "role-developer", teamName: "HiveMI", status: "idle", model: "gpt-4o", port: 5004, currentTaskId: null },
-  { id: "agent-005", name: "Theodora", roleId: "role-devops", teamName: "HiveMI", status: "working", model: "gpt-4o", port: 5005, currentTaskId: "task-045" },
+  { id: "agent-002", name: "Cornelius", roleId: "role-backend", teamName: "HiveMI", status: "working", model: "gpt-4o", port: 5002, currentTaskId: "task-043" },
+  { id: "agent-003", name: "Reginald", roleId: "role-backend", teamName: "HiveMI", status: "working", model: "claude-3-5-sonnet", port: 5003, currentTaskId: "task-044" },
+  { id: "agent-004", name: "Penelope", roleId: "role-backend", teamName: "HiveMI", status: "idle", model: "gpt-4o", port: 5004, currentTaskId: null },
+  { id: "agent-005", name: "Theodora", roleId: "role-pm", teamName: "HiveMI", status: "working", model: "gpt-4o", port: 5005, currentTaskId: "task-045" },
   { id: "agent-006", name: "Wellington", roleId: "role-qa", teamName: "Tests", status: "working", model: "gpt-4o", port: 5006, currentTaskId: "task-046" },
   { id: "agent-007", name: "Maximilian", roleId: "role-qa", teamName: "Tests", status: "error", model: "gpt-4o", port: 5007, currentTaskId: null },
-  { id: "agent-008", name: "Gwendolyn", roleId: "role-sre", teamName: "Pipeline", status: "working", model: "claude-3-5-sonnet", port: 5008, currentTaskId: "task-047" },
+  { id: "agent-008", name: "Gwendolyn", roleId: "role-tech-lead", teamName: "Pipeline", status: "working", model: "claude-3-5-sonnet", port: 5008, currentTaskId: "task-047" },
 ];
 
 async function getTeamIdMap(): Promise<Record<string, string>> {
