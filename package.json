@@ -1,0 +1,32 @@
+{
+  "name": "hivemi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hive Mesh Intelligence - Orquestrador de agentes de IA distribuídos",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' --filter './packages/*' dev",
+    "build": "pnpm --filter './packages/*' build && pnpm --filter './apps/*' build",
+    "lint": "pnpm --parallel --filter './apps/*' --filter './packages/*' lint",
+    "test": "pnpm --parallel --filter './packages/*' test",
+    "clean": "pnpm --parallel --filter './apps/*' --filter './packages/*' clean",
+    "db:generate": "pnpm --filter registry db:generate",
+    "db:migrate": "pnpm --filter registry db:migrate",
+    "db:studio": "pnpm --filter registry db:studio",
+    "typecheck": "pnpm --parallel --filter './apps/*' --filter './packages/*' typecheck"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestration",
+    "distributed",
+    "p2p",
+    "llm"
+  ],
+  "author": "João Almeida",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
