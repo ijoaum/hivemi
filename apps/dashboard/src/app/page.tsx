@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar, MobileHeader } from "@/components/sidebar";
 import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
@@ -55,8 +55,8 @@ function TeamSkeleton() {
         <div className="h-6 w-32 bg-gray-300 dark:bg-gray-700 rounded animate-pulse" />
       </div>
       <div className="rounded-xl border p-4 border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-          {[1, 2, 3, 4, 5].map((i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
             <AgentCardSkeleton key={i} />
           ))}
         </div>
@@ -67,6 +67,7 @@ function TeamSkeleton() {
 
 export default function Home() {
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Fetch from API with auto-refresh every 5 seconds
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
@@ -135,36 +136,68 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-gray-950">
-      <Sidebar />
+      {/* Mobile Header */}
+      <MobileHeader onMenuClick={() => setIsSidebarOpen(true)} />
       
-      <main className="flex-1 p-8 overflow-auto">
+      {/* Sidebar */}
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      
+      {/* Main content - add top padding on mobile for fixed header */}
+      <main className="flex-1 p-4 md:p-8 overflow-auto pt-18 md:pt-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
               The Hive 🐝
             </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1">
               Your agent squad, working in real-time
             </p>
           </div>
           
-          <div className="flex items-center gap-4">
-            {!isLoading && <StatusBar agents={agents as any} />}
+          <div className="flex items-center gap-3 md:gap-4">
+            {/* StatusBar - compact on mobile */}
+            {!isLoading && (
+              <div className="hidden sm:block">
+                <StatusBar agents={agents as any} />
+              </div>
+            )}
             
+            {/* Mobile stats - just numbers */}
+            {!isLoading && (
+              <div className="flex sm:hidden items-center gap-3 text-sm">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="font-medium">{stats.working}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span className="font-medium">{stats.idle}</span>
+                </span>
+                {stats.error > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="font-medium text-red-600">{stats.error}</span>
+                  </span>
+                )}
+              </div>
+            )}
+            
+            {/* Deploy button - icon only on mobile */}
             <button 
               onClick={() => setIsDeployModalOpen(true)}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
-                             font-medium rounded-lg transition-colors flex items-center gap-2">
-              <span>+</span>
-              Deploy Agent
+              className="px-3 md:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
+                         font-medium rounded-lg transition-colors flex items-center gap-2"
+            >
+              <span className="text-lg">+</span>
+              <span className="hidden sm:inline">Deploy Agent</span>
             </button>
           </div>
         </div>
 
         {/* Loading State */}
         {isLoading && (
-          <div className="space-y-8">
+          <div className="space-y-6 md:space-y-8">
             <TeamSkeleton />
             <TeamSkeleton />
             <TeamSkeleton />
@@ -173,7 +206,7 @@ export default function Home() {
 
         {/* Teams Grid */}
         {!isLoading && (
-          <div className="space-y-8">
+          <div className="space-y-6 md:space-y-8">
             {teams.map((team) => {
               const teamAgents = getTeamAgents(team.id);
               const workingCount = teamAgents.filter(a => a.status === "working").length;
@@ -181,23 +214,23 @@ export default function Home() {
               return (
                 <div key={team.id}>
                   {/* Team Header */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <span className="text-2xl">{team.emoji}</span>
-                    <h2 className={cn("text-xl font-bold", teamHeaderColors[team.color] || "text-gray-700")}>
+                  <div className="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
+                    <span className="text-xl md:text-2xl">{team.emoji}</span>
+                    <h2 className={cn("text-lg md:text-xl font-bold", teamHeaderColors[team.color] || "text-gray-700")}>
                       {team.name}
                     </h2>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {workingCount}/{teamAgents.length} working
+                    <span className="text-xs md:text-sm text-gray-500 dark:text-gray-400">
+                      {workingCount}/{teamAgents.length}
                     </span>
                   </div>
                   
-                  {/* Team Agents Grid */}
+                  {/* Team Agents Grid - 1 col mobile, 2 col tablet, 3+ desktop */}
                   <div className={cn(
-                    "rounded-xl border p-4",
+                    "rounded-xl border p-3 md:p-4",
                     teamColors[team.color] || teamColors.amber
                   )}>
                     {teamAgents.length > 0 ? (
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
                         {teamAgents.map((agent) => (
                           <AgentCard
                             key={agent.id}
@@ -208,7 +241,7 @@ export default function Home() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-6 md:py-8 text-gray-500 text-sm md:text-base">
                         No agents in this team yet
                       </div>
                     )}
@@ -219,29 +252,29 @@ export default function Home() {
           </div>
         )}
 
-        {/* Quick Stats */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Agents</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+        {/* Quick Stats - 2x2 on mobile, 4 cols on desktop */}
+        <div className="mt-6 md:mt-8 grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          <div className="bg-white dark:bg-gray-900 rounded-xl p-4 md:p-5 border border-gray-200 dark:border-gray-800">
+            <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Total Agents</p>
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">
               {isLoading ? "..." : stats.total}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Working</p>
-            <p className="text-3xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+          <div className="bg-white dark:bg-gray-900 rounded-xl p-4 md:p-5 border border-gray-200 dark:border-gray-800">
+            <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Working</p>
+            <p className="text-2xl md:text-3xl font-bold text-amber-600 dark:text-amber-400 mt-1">
               {isLoading ? "..." : stats.working}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Idle</p>
-            <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+          <div className="bg-white dark:bg-gray-900 rounded-xl p-4 md:p-5 border border-gray-200 dark:border-gray-800">
+            <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Idle</p>
+            <p className="text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
               {isLoading ? "..." : stats.idle}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Active Teams</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+          <div className="bg-white dark:bg-gray-900 rounded-xl p-4 md:p-5 border border-gray-200 dark:border-gray-800">
+            <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Teams</p>
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">
               {isLoading ? "..." : teams.length}
             </p>
           </div>
