@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #f3f4f6;
   --foreground: #171717;
+}
+
+.dark {
+  --background: #030712;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -13,13 +20,6 @@
   
   /* Custom animations */
   --animate-pulse-subtle: pulse-subtle 2s ease-in-out infinite;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #030712;
-    --foreground: #ededed;
-  }
 }
 
 body {
