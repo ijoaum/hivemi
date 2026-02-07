@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/sidebar";
+import { AppLayout } from "@/components/app-layout";
 import { cn } from "@/lib/utils";
 
 interface SettingSection {
@@ -23,58 +23,55 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState("general");
 
   return (
-    <div className="flex min-h-screen bg-gray-950">
-      <Sidebar />
-      <main className="flex-1 p-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-          <p className="text-gray-400">Configure your HiveMI cluster</p>
-        </div>
+    <AppLayout>
+      {/* Header */}
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Settings</h1>
+        <p className="text-sm md:text-base text-gray-400">Configure your HiveMI cluster</p>
+      </div>
 
-        <div className="flex gap-8">
-          {/* Sections nav */}
-          <nav className="w-48 flex-shrink-0">
-            <ul className="space-y-1">
-              {sections.map((section) => (
-                <li key={section.id}>
-                  <button
-                    onClick={() => setActiveSection(section.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors",
-                      activeSection === section.id
-                        ? "bg-gray-800 text-white"
-                        : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-300"
-                    )}
-                  >
-                    <span>{section.icon}</span>
-                    <span>{section.label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
+      <div className="flex flex-col md:flex-row gap-4 md:gap-8">
+        {/* Sections nav - horizontal scroll on mobile, vertical on desktop */}
+        <nav className="md:w-48 flex-shrink-0">
+          <ul className="flex md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0 md:space-y-1">
+            {sections.map((section) => (
+              <li key={section.id} className="flex-shrink-0">
+                <button
+                  onClick={() => setActiveSection(section.id)}
+                  className={cn(
+                    "flex items-center gap-2 md:gap-3 px-3 py-2 rounded-lg text-left transition-colors whitespace-nowrap text-sm md:text-base md:w-full",
+                    activeSection === section.id
+                      ? "bg-gray-800 text-white"
+                      : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-300"
+                  )}
+                >
+                  <span>{section.icon}</span>
+                  <span>{section.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-          {/* Content */}
-          <div className="flex-1 max-w-2xl">
-            {activeSection === "general" && <GeneralSettings />}
-            {activeSection === "agents" && <AgentSettings />}
-            {activeSection === "llm" && <LLMSettings />}
-            {activeSection === "secrets" && <SecretsSettings />}
-            {activeSection === "notifications" && <NotificationSettings />}
-            {activeSection === "danger" && <DangerZone />}
-          </div>
+        {/* Content */}
+        <div className="flex-1 max-w-2xl">
+          {activeSection === "general" && <GeneralSettings />}
+          {activeSection === "agents" && <AgentSettings />}
+          {activeSection === "llm" && <LLMSettings />}
+          {activeSection === "secrets" && <SecretsSettings />}
+          {activeSection === "notifications" && <NotificationSettings />}
+          {activeSection === "danger" && <DangerZone />}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 
 function SettingCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6 mb-4">
-      <h3 className="text-lg font-medium text-white mb-1">{title}</h3>
-      {description && <p className="text-sm text-gray-400 mb-4">{description}</p>}
+    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4 md:p-6 mb-3 md:mb-4">
+      <h3 className="text-base md:text-lg font-medium text-white mb-1">{title}</h3>
+      {description && <p className="text-xs md:text-sm text-gray-400 mb-3 md:mb-4">{description}</p>}
       {children}
     </div>
   );
@@ -83,17 +80,17 @@ function SettingCard({ title, description, children }: { title: string; descript
 function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <label className="flex items-center justify-between cursor-pointer">
-      <span className="text-gray-300">{label}</span>
+      <span className="text-sm md:text-base text-gray-300">{label}</span>
       <button
         onClick={() => onChange(!enabled)}
         className={cn(
-          "relative w-11 h-6 rounded-full transition-colors",
+          "relative w-10 md:w-11 h-5 md:h-6 rounded-full transition-colors flex-shrink-0 ml-2",
           enabled ? "bg-amber-500" : "bg-gray-600"
         )}
       >
         <span
           className={cn(
-            "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform",
+            "absolute top-0.5 md:top-1 left-0.5 md:left-1 w-4 h-4 bg-white rounded-full transition-transform",
             enabled && "translate-x-5"
           )}
         />
@@ -110,30 +107,30 @@ function GeneralSettings() {
   return (
     <>
       <SettingCard title="Cluster Configuration" description="Basic settings for your HiveMI cluster">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Cluster Name</label>
+            <label className="block text-xs md:text-sm text-gray-400 mb-1 md:mb-2">Cluster Name</label>
             <input
               type="text"
               value={clusterName}
               onChange={(e) => setClusterName(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-white focus:outline-none focus:border-amber-500 text-sm md:text-base"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Registry URL</label>
+            <label className="block text-xs md:text-sm text-gray-400 mb-1 md:mb-2">Registry URL</label>
             <input
               type="text"
               value="http://localhost:4001"
               disabled
-              className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-2 text-gray-500"
+              className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-gray-500 text-sm md:text-base"
             />
           </div>
         </div>
       </SettingCard>
 
       <SettingCard title="Behavior">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <Toggle enabled={autoStart} onChange={setAutoStart} label="Auto-start agents on boot" />
           <Toggle enabled={debugMode} onChange={setDebugMode} label="Debug mode (verbose logging)" />
         </div>
@@ -150,32 +147,32 @@ function AgentSettings() {
   return (
     <>
       <SettingCard title="Agent Limits" description="Control agent resource usage">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Max Concurrent Agents</label>
+            <label className="block text-xs md:text-sm text-gray-400 mb-1 md:mb-2">Max Concurrent Agents</label>
             <input
               type="number"
               value={maxAgents}
               onChange={(e) => setMaxAgents(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-white focus:outline-none focus:border-amber-500 text-sm md:text-base"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Heartbeat Interval (seconds)</label>
+            <label className="block text-xs md:text-sm text-gray-400 mb-1 md:mb-2">Heartbeat Interval (seconds)</label>
             <input
               type="number"
               value={heartbeatInterval}
               onChange={(e) => setHeartbeatInterval(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-white focus:outline-none focus:border-amber-500 text-sm md:text-base"
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Task Timeout (seconds)</label>
+            <label className="block text-xs md:text-sm text-gray-400 mb-1 md:mb-2">Task Timeout (seconds)</label>
             <input
               type="number"
               value={taskTimeout}
               onChange={(e) => setTaskTimeout(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-white focus:outline-none focus:border-amber-500 text-sm md:text-base"
             />
           </div>
         </div>
@@ -199,7 +196,7 @@ function LLMSettings() {
         <select
           value={defaultProvider}
           onChange={(e) => setDefaultProvider(e.target.value)}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 md:px-4 py-2 text-white focus:outline-none focus:border-amber-500 text-sm md:text-base"
         >
           <option value="openai">OpenAI (gpt-4o)</option>
           <option value="anthropic">Anthropic (claude-sonnet-4)</option>
@@ -207,15 +204,15 @@ function LLMSettings() {
       </SettingCard>
 
       <SettingCard title="Configured Providers">
-        <div className="space-y-3">
+        <div className="space-y-2 md:space-y-3">
           {providers.map((provider) => (
             <div
               key={provider.id}
-              className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700"
+              className="flex items-center justify-between p-2 md:p-3 bg-gray-900/50 rounded-lg border border-gray-700"
             >
               <div>
-                <p className="text-white font-medium">{provider.name}</p>
-                <p className="text-sm text-gray-500">{provider.model}</p>
+                <p className="text-sm md:text-base text-white font-medium">{provider.name}</p>
+                <p className="text-xs md:text-sm text-gray-500">{provider.model}</p>
               </div>
               <span
                 className={cn(
@@ -246,25 +243,25 @@ function SecretsSettings() {
   return (
     <>
       <SettingCard title="Secrets Manager" description="Manage API keys and sensitive credentials">
-        <div className="space-y-3">
+        <div className="space-y-2 md:space-y-3">
           {secrets.map((secret) => (
             <div
               key={secret.name}
-              className="flex items-center justify-between p-3 bg-gray-900/50 rounded-lg border border-gray-700"
+              className="flex items-center justify-between p-2 md:p-3 bg-gray-900/50 rounded-lg border border-gray-700"
             >
-              <div>
-                <p className="text-white font-mono text-sm">{secret.name}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-mono text-xs md:text-sm truncate">{secret.name}</p>
                 <p className="text-xs text-gray-500">
                   via {secret.source} • {secret.lastUpdated}
                 </p>
               </div>
-              <button className="text-xs text-amber-400 hover:text-amber-300">
+              <button className="text-xs text-amber-400 hover:text-amber-300 ml-2 flex-shrink-0">
                 Rotate
               </button>
             </div>
           ))}
         </div>
-        <button className="mt-4 w-full py-2 border border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
+        <button className="mt-3 md:mt-4 w-full py-2 border border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors text-sm">
           + Add Secret
         </button>
       </SettingCard>
@@ -272,8 +269,8 @@ function SecretsSettings() {
       <SettingCard title="1Password Integration">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white">Service Account</p>
-            <p className="text-sm text-gray-500">Vault: Clawdia</p>
+            <p className="text-sm md:text-base text-white">Service Account</p>
+            <p className="text-xs md:text-sm text-gray-500">Vault: Clawdia</p>
           </div>
           <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400">
             Connected
@@ -293,20 +290,20 @@ function NotificationSettings() {
   return (
     <>
       <SettingCard title="Task Notifications">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <Toggle enabled={taskComplete} onChange={setTaskComplete} label="Task completed" />
           <Toggle enabled={taskFailed} onChange={setTaskFailed} label="Task failed" />
         </div>
       </SettingCard>
 
       <SettingCard title="Agent Notifications">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <Toggle enabled={agentOffline} onChange={setAgentOffline} label="Agent went offline" />
         </div>
       </SettingCard>
 
       <SettingCard title="Digest">
-        <div className="space-y-4">
+        <div className="space-y-3 md:space-y-4">
           <Toggle enabled={dailyDigest} onChange={setDailyDigest} label="Daily summary email" />
         </div>
       </SettingCard>
@@ -318,19 +315,19 @@ function DangerZone() {
   return (
     <>
       <SettingCard title="Reset Cluster">
-        <p className="text-sm text-gray-400 mb-4">
+        <p className="text-xs md:text-sm text-gray-400 mb-3 md:mb-4">
           This will stop all agents and clear the task queue. Agent configurations will be preserved.
         </p>
-        <button className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
+        <button className="px-3 md:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm md:text-base">
           Reset Cluster
         </button>
       </SettingCard>
 
       <SettingCard title="Delete All Data">
-        <p className="text-sm text-gray-400 mb-4">
+        <p className="text-xs md:text-sm text-gray-400 mb-3 md:mb-4">
           Permanently delete all agents, tasks, and logs. This action cannot be undone.
         </p>
-        <button className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">
+        <button className="px-3 md:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm md:text-base">
           Delete Everything
         </button>
       </SettingCard>
