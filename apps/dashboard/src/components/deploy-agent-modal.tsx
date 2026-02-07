@@ -121,7 +121,7 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: De
           <div className="absolute inset-0 z-20 bg-gray-900/95 flex flex-col items-center justify-center gap-4">
             <CheckCircle className="w-16 h-16 text-green-400 animate-bounce" />
             <p className="text-xl font-semibold text-white">Agent Deployed!</p>
-            <p className="text-gray-400">{name} is ready to work 🐝</p>
+            <p className="text-gray-400">{name} is ready to work ⬡</p>
           </div>
         )}
 

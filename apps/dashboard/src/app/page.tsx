@@ -169,8 +169,8 @@ export default function Home() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-            The Hive 🐝
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            The Hive <Hexagon className="w-6 h-6 text-amber-500 inline" />
           </h1>
           <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1">
             Your agent squad, working in real-time

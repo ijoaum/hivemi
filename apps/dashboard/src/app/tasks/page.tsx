@@ -31,7 +31,7 @@ export default function TasksPage() {
       assignedTo: t.agentId || undefined,
       teamId: t.teamId,
       teamName: apiTeams?.find(team => team.id === t.teamId)?.name || "Unknown",
-      teamEmoji: apiTeams?.find(team => team.id === t.teamId)?.emoji || "🐝",
+      teamEmoji: apiTeams?.find(team => team.id === t.teamId)?.emoji || "hexagon",
       progress: t.status === "running" ? 50 : t.status === "completed" ? 100 : 0,
       createdAt: t.createdAt,
       startedAt: t.startedAt || undefined,

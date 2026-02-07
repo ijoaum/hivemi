@@ -32,7 +32,7 @@ export interface Role {
 }
 
 export const teams: Team[] = [
-  { id: "hivemi", name: "HiveMI", emoji: "🐝", color: "amber" },
+  { id: "hivemi", name: "HiveMI", emoji: "hexagon", color: "amber" },
   { id: "tests", name: "Tests", emoji: "🧪", color: "green" },
   { id: "pipeline", name: "Pipeline", emoji: "🚀", color: "purple" },
 ];
