@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useApi } from "@/hooks/use-api";
 import { tasksApi, agentsApi, teamsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { X } from "lucide-react";
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -68,7 +69,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 

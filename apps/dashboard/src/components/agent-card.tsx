@@ -3,6 +3,7 @@
 import { Agent, AgentStatus } from "@/types/agent";
 import { formatUptime } from "@/data/mock-agents";
 import { cn } from "@/lib/utils";
+import { Bot, Clock, BarChart3, Settings, FileText } from "lucide-react";
 
 interface AgentCardProps {
   agent: Agent;
@@ -63,7 +64,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure }: AgentCardProps) {
       {/* Header Row */}
       <div className="flex items-center justify-between mb-2 md:mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg md:text-xl">🐝</span>
+          <Bot className="w-5 h-5 md:w-6 md:h-6 text-amber-500 shrink-0" />
           <div className="min-w-0">
             <h3 className="text-sm md:text-base font-semibold text-gray-900 dark:text-white truncate">
               {agent.name}
@@ -90,21 +91,29 @@ export function AgentCard({ agent, onViewLogs, onConfigure }: AgentCardProps) {
       {/* Stats Row */}
       <div className="flex items-center justify-between text-xs md:text-sm text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-2 md:gap-4">
-          <span>⏱️ {formatUptime(agent.uptime)}</span>
-          <span className="hidden sm:inline">📊 {agent.tasksToday}</span>
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3 md:w-4 md:h-4" />
+            {formatUptime(agent.uptime)}
+          </span>
+          <span className="hidden sm:flex items-center gap-1">
+            <BarChart3 className="w-3 h-3 md:w-4 md:h-4" />
+            {agent.tasksToday}
+          </span>
         </div>
         <div className="flex items-center gap-0.5 md:gap-1">
           <button
             onClick={onViewLogs}
-            className="px-2 py-1.5 md:py-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs md:text-sm active:bg-gray-200 dark:active:bg-gray-700"
+            className="p-1.5 md:p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded active:bg-gray-200 dark:active:bg-gray-700"
+            title="View logs"
           >
-            Logs
+            <FileText className="w-4 h-4" />
           </button>
           <button
             onClick={onConfigure}
-            className="px-2 py-1.5 md:py-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs md:text-sm active:bg-gray-200 dark:active:bg-gray-700"
+            className="p-1.5 md:p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded active:bg-gray-200 dark:active:bg-gray-700"
+            title="Configure"
           >
-            ⚙️
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>

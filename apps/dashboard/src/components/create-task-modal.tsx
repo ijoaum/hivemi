@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useApi } from "@/hooks/use-api";
 import { demandsApi, teamsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { X, Loader2 } from "lucide-react";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -74,7 +75,7 @@ export function CreateTaskModal({ isOpen, onClose, onCreated }: CreateTaskModalP
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 

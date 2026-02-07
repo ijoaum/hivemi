@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { mockRoles } from "@/data/mock-roles";
 import { teams } from "@/types/agent";
+import { X, Loader2, Rocket } from "lucide-react";
 
 interface DeployAgentModalProps {
   isOpen: boolean;
@@ -68,7 +69,7 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -186,12 +187,12 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
             >
               {isDeploying ? (
                 <>
-                  <span className="animate-spin">⟳</span>
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Deploying...
                 </>
               ) : (
                 <>
-                  🚀 Deploy Agent
+                  <Rocket className="w-4 h-4" /> Deploy Agent
                 </>
               )}
             </button>

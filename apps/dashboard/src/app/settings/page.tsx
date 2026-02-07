@@ -3,20 +3,29 @@
 import { useState } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { cn } from "@/lib/utils";
+import { 
+  Settings, 
+  Users, 
+  Brain, 
+  KeyRound, 
+  Bell, 
+  AlertTriangle,
+  type LucideIcon
+} from "lucide-react";
 
 interface SettingSection {
   id: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 const sections: SettingSection[] = [
-  { id: "general", label: "General", icon: "⚙️" },
-  { id: "agents", label: "Agents", icon: "👥" },
-  { id: "llm", label: "LLM Providers", icon: "🧠" },
-  { id: "secrets", label: "Secrets", icon: "🔐" },
-  { id: "notifications", label: "Notifications", icon: "🔔" },
-  { id: "danger", label: "Danger Zone", icon: "⚠️" },
+  { id: "general", label: "General", icon: Settings },
+  { id: "agents", label: "Agents", icon: Users },
+  { id: "llm", label: "LLM Providers", icon: Brain },
+  { id: "secrets", label: "Secrets", icon: KeyRound },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "danger", label: "Danger Zone", icon: AlertTriangle },
 ];
 
 export default function SettingsPage() {
@@ -45,7 +54,7 @@ export default function SettingsPage() {
                       : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-300"
                   )}
                 >
-                  <span>{section.icon}</span>
+                  <section.icon className="w-4 h-4 md:w-5 md:h-5" />
                   <span>{section.label}</span>
                 </button>
               </li>
