@@ -151,7 +151,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 bottom-full mb-2 w-44 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-2 w-44 bg-gray-900 border border-gray-600 rounded-xl shadow-2xl overflow-hidden z-50">
                 {/* Start / Stop */}
                 {isOnline ? (
                   <button
