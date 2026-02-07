@@ -1,15 +1,20 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { Agent, AgentStatus } from "@/types/agent";
 import { formatUptime } from "@/data/mock-agents";
 import { RoleIcon } from "@/components/role-icon";
 import { cn } from "@/lib/utils";
-import { Clock, BarChart3, Settings, FileText } from "lucide-react";
+import { Clock, BarChart3, Settings, FileText, Play, Square, RotateCcw, Trash2 } from "lucide-react";
 
 interface AgentCardProps {
   agent: Agent & { roleIcon?: string };
   onViewLogs?: () => void;
   onConfigure?: () => void;
+  onStart?: () => void;
+  onStop?: () => void;
+  onRestart?: () => void;
+  onDelete?: () => void;
 }
 
 const statusConfig: Record<AgentStatus, { 
@@ -49,9 +54,26 @@ const statusConfig: Record<AgentStatus, {
   },
 };
 
-export function AgentCard({ agent, onViewLogs, onConfigure }: AgentCardProps) {
+export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onRestart, onDelete }: AgentCardProps) {
   const status = statusConfig[agent.status];
-  
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const isOnline = agent.status !== "offline";
+
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    if (menuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [menuOpen]);
+
   return (
     <div
       className={cn(
@@ -111,13 +133,64 @@ export function AgentCard({ agent, onViewLogs, onConfigure }: AgentCardProps) {
           >
             <FileText className="w-4 h-4" />
           </button>
-          <button
-            onClick={onConfigure}
-            className="p-1.5 md:p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded active:bg-gray-200 dark:active:bg-gray-700"
-            title="Configure"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+
+          {/* Settings gear with dropdown */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className={cn(
+                "p-1.5 md:p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded active:bg-gray-200 dark:active:bg-gray-700",
+                menuOpen && "bg-gray-100 dark:bg-gray-800"
+              )}
+              title="Agent actions"
+            >
+              <Settings className={cn("w-4 h-4 transition-transform", menuOpen && "rotate-90")} />
+            </button>
+
+            {menuOpen && (
+              <div className="absolute right-0 bottom-full mb-2 w-44 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50">
+                {/* Start / Stop */}
+                {isOnline ? (
+                  <button
+                    onClick={() => { setMenuOpen(false); onStop?.(); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                  >
+                    <Square className="w-4 h-4" />
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setMenuOpen(false); onStart?.(); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-green-400 hover:bg-green-500/10 transition-colors"
+                  >
+                    <Play className="w-4 h-4" />
+                    Start
+                  </button>
+                )}
+
+                {/* Restart */}
+                <button
+                  onClick={() => { setMenuOpen(false); onRestart?.(); }}
+                  disabled={!isOnline}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Restart
+                </button>
+
+                <div className="border-t border-gray-700" />
+
+                {/* Delete */}
+                <button
+                  onClick={() => { setMenuOpen(false); onDelete?.(); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

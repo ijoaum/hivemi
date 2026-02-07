@@ -5,6 +5,7 @@ import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
 import { AppLayout } from "@/components/app-layout";
 import { DeployAgentModal } from "@/components/deploy-agent-modal";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,7 @@ function TeamSkeleton() {
 
 export default function Home() {
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: "stop" | "restart" | "delete"; agentId: string; agentName: string } | null>(null);
   
   // Fetch from API with auto-refresh every 5 seconds
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
@@ -129,7 +131,34 @@ export default function Home() {
       port: 3001 + Math.floor(Math.random() * 100),
       status: data.autoStart ? "idle" : "offline",
     });
-    // Immediately refetch to show new agent
+    await refetchAgents();
+  };
+
+  const handleAgentStart = async (agentId: string) => {
+    await agentsApi.update(agentId, { status: "idle" });
+    await refetchAgents();
+  };
+
+  const handleAgentStop = async () => {
+    if (!confirmAction || confirmAction.type !== "stop") return;
+    await agentsApi.update(confirmAction.agentId, { status: "offline" });
+    setConfirmAction(null);
+    await refetchAgents();
+  };
+
+  const handleAgentRestart = async () => {
+    if (!confirmAction || confirmAction.type !== "restart") return;
+    await agentsApi.update(confirmAction.agentId, { status: "offline" });
+    await new Promise(r => setTimeout(r, 500));
+    await agentsApi.update(confirmAction.agentId, { status: "idle" });
+    setConfirmAction(null);
+    await refetchAgents();
+  };
+
+  const handleAgentDelete = async () => {
+    if (!confirmAction || confirmAction.type !== "delete") return;
+    await agentsApi.delete(confirmAction.agentId);
+    setConfirmAction(null);
     await refetchAgents();
   };
 
@@ -230,6 +259,10 @@ export default function Home() {
                           agent={agent as any}
                           onViewLogs={() => console.log("View logs:", agent.name)}
                           onConfigure={() => console.log("Configure:", agent.name)}
+                          onStart={() => handleAgentStart(agent.id)}
+                          onStop={() => setConfirmAction({ type: "stop", agentId: agent.id, agentName: agent.name })}
+                          onRestart={() => setConfirmAction({ type: "restart", agentId: agent.id, agentName: agent.name })}
+                          onDelete={() => setConfirmAction({ type: "delete", agentId: agent.id, agentName: agent.name })}
                         />
                       ))}
                     </div>
@@ -280,6 +313,37 @@ export default function Home() {
         onDeploy={handleDeploy}
         roles={apiRoles || []}
         teams={apiTeams || []}
+      />
+
+      {/* Stop Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "stop"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentStop}
+        title="Stop Agent"
+        message={`Are you sure you want to stop "${confirmAction?.agentName}"? The agent will go offline and stop processing tasks.`}
+        confirmLabel="Stop"
+      />
+
+      {/* Restart Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "restart"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentRestart}
+        title="Restart Agent"
+        message={`Are you sure you want to restart "${confirmAction?.agentName}"? The agent will briefly go offline and then come back.`}
+        confirmLabel="Restart"
+      />
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "delete"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentDelete}
+        title="Delete Agent"
+        message={`Are you sure you want to delete "${confirmAction?.agentName}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDestructive
       />
     </AppLayout>
   );
