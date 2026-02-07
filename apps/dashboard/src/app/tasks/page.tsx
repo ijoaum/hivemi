@@ -6,7 +6,6 @@ import { TaskCard } from "@/components/task-card";
 import { TaskFilters } from "@/components/task-filters";
 import { useApi } from "@/hooks/use-api";
 import { tasksApi, teamsApi, type Task } from "@/lib/api";
-import { mockTasks } from "@/data/mock-tasks";
 import { TaskStatus } from "@/types/task";
 
 export default function TasksPage() {
@@ -20,11 +19,9 @@ export default function TasksPage() {
   const { data: apiTasks, error: tasksError, refetch: refetchTasks } = useApi(tasksFetcher, { refetchInterval: 5000 });
   const { data: apiTeams } = useApi(teamsFetcher);
 
-  // Convert API tasks to display format or fall back to mock
+  // Convert API tasks to display format
   const tasks = useMemo(() => {
-    if (tasksError || !apiTasks?.length) {
-      return mockTasks;
-    }
+    if (!apiTasks?.length) return [];
     return apiTasks.map(t => ({
       id: t.id,
       title: t.title,
@@ -90,7 +87,7 @@ export default function TasksPage() {
         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Tasks</h1>
         <p className="text-sm md:text-base text-gray-400">
           Monitor and manage agent tasks
-          {tasksError && <span className="text-amber-500 ml-2">(using mock data)</span>}
+          {tasksError && <span className="text-amber-500 ml-2">(API unavailable)</span>}
         </p>
       </div>
 
