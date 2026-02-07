@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { Clock, BarChart3, Settings, FileText, Play, Square, RotateCcw, Trash2 } from "lucide-react";
 
 interface AgentCardProps {
-  agent: Agent & { roleIcon?: string };
+  agent: Agent & { roleIcon?: string; roleColor?: string };
   onViewLogs?: () => void;
   onConfigure?: () => void;
   onStart?: () => void;
@@ -55,6 +55,17 @@ const statusConfig: Record<AgentStatus, {
   },
 };
 
+const roleColorClasses: Record<string, string> = {
+  blue: "text-blue-400",
+  purple: "text-purple-400",
+  cyan: "text-cyan-400",
+  green: "text-green-400",
+  amber: "text-amber-400",
+  red: "text-red-400",
+  pink: "text-pink-400",
+  indigo: "text-indigo-400",
+};
+
 export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onRestart, onDelete }: AgentCardProps) {
   const status = statusConfig[agent.status];
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,7 +99,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
       {/* Header Row */}
       <div className="flex items-center justify-between mb-2 md:mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-5 h-5 md:w-6 md:h-6 text-amber-500 shrink-0">
+          <div className={cn("w-5 h-5 md:w-6 md:h-6 shrink-0", roleColorClasses[agent.roleColor || ""] || "text-amber-500")}>
             <RoleIcon icon={agent.roleIcon || "bot"} className="w-5 h-5 md:w-6 md:h-6" />
           </div>
           <div className="min-w-0">

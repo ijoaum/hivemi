@@ -91,6 +91,7 @@ export default function Home() {
         name: a.name,
         role: a.role?.name || "Agent",
         roleIcon: a.role?.icon || "bot",
+        roleColor: a.role?.color || "amber",
         team: a.teamId,
         teamId: a.teamId,
         status: a.status,
