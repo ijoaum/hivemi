@@ -299,4 +299,17 @@ pnpm lint
 
 ## License
 
-MIT © [João Lana](https://github.com/ijoaum)
+**Dual Licensed:**
+
+| Use Case | License | Cost |
+|----------|---------|------|
+| Personal, Educational, Open Source | AGPL-3.0 | Free |
+| Commercial, Closed-source | [Commercial License](mailto:joao@lana.dev) | Contact |
+
+The AGPL license requires you to publish your source code if you use HiveMI in a network service. For commercial use without this obligation, contact for a commercial license.
+
+📧 **Questions:** joao@lana.dev
+
+---
+
+© [João Lana](https://github.com/ijoaum)
