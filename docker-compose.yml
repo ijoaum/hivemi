@@ -9,8 +9,6 @@ services:
       POSTGRES_USER: hivemi
       POSTGRES_PASSWORD: hivemi
       POSTGRES_DB: hivemi
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,9 +16,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    # No external port - only accessible within Docker network
 
   # ===================
-  # Registry
+  # Registry (internal)
   # ===================
   registry:
     build:
@@ -32,14 +31,13 @@ services:
       - PORT=4001
       - DATABASE_URL=postgresql://hivemi:hivemi@postgres:5432/hivemi
       - HIVEMI_SECRET=${HIVEMI_SECRET}
-    ports:
-      - "4001:4001"
     depends_on:
       postgres:
         condition: service_healthy
+    # No external port - only accessible within Docker network
 
   # ===================
-  # Manager
+  # Manager (internal)
   # ===================
   manager:
     build:
@@ -51,25 +49,26 @@ services:
       - PORT=4000
       - REGISTRY_URL=http://registry:4001
       - HIVEMI_SECRET=${HIVEMI_SECRET}
-    ports:
-      - "4000:4000"
     depends_on:
       - registry
+    # No external port - only accessible within Docker network
 
   # ===================
-  # Dashboard
+  # Dashboard (the only exposed service)
   # ===================
   dashboard:
     build:
-      context: ./apps/dashboard
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
     container_name: hivemi-dashboard
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://manager:4000
+      - REGISTRY_URL=http://registry:4001
+      - MANAGER_URL=http://manager:4000
     ports:
-      - "3000:3000"
+      - "3000:3000"  # Only exposed port
     depends_on:
+      - registry
       - manager
 
 volumes:

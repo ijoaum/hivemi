@@ -130,9 +130,7 @@ export default function TasksPage() {
           {filteredTasks.map((task) => (
             <TaskCard 
               key={task.id} 
-              task={task}
-              onRetry={() => handleRetry(task.id)}
-              onCancel={() => handleCancel(task.id)}
+              task={task as any}
             />
           ))}
         </div>
