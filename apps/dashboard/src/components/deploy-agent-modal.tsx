@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { mockRoles } from "@/data/mock-roles";
 import { teams } from "@/types/agent";
 import { X, Loader2, Rocket } from "lucide-react";
+import { RoleIcon } from "./role-icon";
 
 interface DeployAgentModalProps {
   isOpen: boolean;
@@ -91,17 +92,24 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
           {/* Role */}
           <div>
             <label className="block text-sm text-gray-400 mb-2">Role</label>
-            <select
-              value={roleId}
-              onChange={(e) => setRoleId(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors"
-            >
+            <div className="grid grid-cols-2 gap-2">
               {mockRoles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.icon} {role.name}
-                </option>
+                <button
+                  key={role.id}
+                  type="button"
+                  onClick={() => setRoleId(role.id)}
+                  className={cn(
+                    "p-3 rounded-lg border text-left transition-all flex items-center gap-3",
+                    roleId === role.id
+                      ? "bg-amber-500/20 border-amber-500 text-white"
+                      : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
+                  )}
+                >
+                  <RoleIcon icon={role.icon} className="w-5 h-5 flex-shrink-0" />
+                  <span className="font-medium text-sm truncate">{role.name}</span>
+                </button>
               ))}
-            </select>
+            </div>
             {selectedRole && (
               <p className="mt-2 text-xs text-gray-500">{selectedRole.description}</p>
             )}
