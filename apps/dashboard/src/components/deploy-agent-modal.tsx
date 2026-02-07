@@ -2,15 +2,28 @@
 
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { mockRoles } from "@/data/mock-roles";
-import { teams } from "@/types/agent";
 import { X, Loader2, Rocket, ChevronDown } from "lucide-react";
 import { RoleIcon } from "./role-icon";
+
+interface Role {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
+interface Team {
+  id: string;
+  name: string;
+  emoji: string;
+}
 
 interface DeployAgentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDeploy: (data: DeployAgentData) => void;
+  roles: Role[];
+  teams: Team[];
 }
 
 export interface DeployAgentData {
@@ -28,15 +41,24 @@ const models = [
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google" },
 ];
 
-export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModalProps) {
+export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: DeployAgentModalProps) {
   const [name, setName] = useState("");
-  const [roleId, setRoleId] = useState(mockRoles[0]?.id || "");
-  const [teamId, setTeamId] = useState<string>(teams[0]?.id || "");
+  const [roleId, setRoleId] = useState("");
+  const [teamId, setTeamId] = useState("");
   const [model, setModel] = useState("gpt-4o");
   const [autoStart, setAutoStart] = useState(true);
   const [isDeploying, setIsDeploying] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const roleDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Set defaults when roles/teams load
+  useEffect(() => {
+    if (roles.length && !roleId) setRoleId(roles[0].id);
+  }, [roles, roleId]);
+
+  useEffect(() => {
+    if (teams.length && !teamId) setTeamId(teams[0].id);
+  }, [teams, teamId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -55,16 +77,16 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
     e.preventDefault();
     setIsDeploying(true);
     
-    // Simulate deploy
-    await new Promise((r) => setTimeout(r, 1500));
-    
-    onDeploy({ name, roleId, teamId, model, autoStart });
-    setIsDeploying(false);
-    setName("");
-    onClose();
+    try {
+      await onDeploy({ name, roleId, teamId, model, autoStart });
+    } finally {
+      setIsDeploying(false);
+      setName("");
+      onClose();
+    }
   };
 
-  const selectedRole = mockRoles.find((r) => r.id === roleId);
+  const selectedRole = roles.find((r) => r.id === roleId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -75,9 +97,9 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
       />
       
       {/* Modal */}
-      <div className="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+      <div className="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
           <h2 className="text-xl font-semibold text-white">Deploy New Agent</h2>
           <button
             onClick={onClose}
@@ -119,7 +141,7 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
             
             {roleDropdownOpen && (
               <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                {mockRoles.map((role) => (
+                {roles.map((role) => (
                   <button
                     key={role.id}
                     type="button"
@@ -213,10 +235,10 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
             </button>
             <button
               type="submit"
-              disabled={!name || isDeploying}
+              disabled={!name || !roleId || !teamId || isDeploying}
               className={cn(
                 "flex-1 px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
-                name && !isDeploying
+                name && roleId && teamId && !isDeploying
                   ? "bg-amber-500 hover:bg-amber-600 text-black"
                   : "bg-gray-700 text-gray-500 cursor-not-allowed"
               )}

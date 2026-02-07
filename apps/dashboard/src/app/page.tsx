@@ -83,12 +83,7 @@ export default function Home() {
   const agents = useMemo(() => {
     if (!apiAgents?.length) return [];
     return apiAgents.map(a => {
-      // Try to find role by ID first, then by slug extracted from roleId (e.g., "role-tech-lead" -> "tech-lead")
-      let role = apiRoles?.find(r => r.id === a.roleId);
-      if (!role && a.roleId?.startsWith("role-")) {
-        const slug = a.roleId.replace("role-", "");
-        role = apiRoles?.find(r => r.slug === slug);
-      }
+      const role = apiRoles?.find(r => r.id === a.roleId);
       return {
         id: a.id,
         name: a.name,
@@ -285,6 +280,8 @@ export default function Home() {
         isOpen={isDeployModalOpen}
         onClose={() => setIsDeployModalOpen(false)}
         onDeploy={handleDeploy}
+        roles={apiRoles || []}
+        teams={apiTeams || []}
       />
     </AppLayout>
   );

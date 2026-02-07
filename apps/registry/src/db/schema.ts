@@ -22,7 +22,7 @@ export const roles = pgTable("roles", {
   name: varchar("name", { length: 100 }).notNull(),
   slug: varchar("slug", { length: 50 }).notNull().unique(),
   description: text("description").notNull(),
-  icon: varchar("icon", { length: 10 }).notNull(),
+  icon: varchar("icon", { length: 50 }).notNull(),
   color: varchar("color", { length: 20 }).notNull(),
   capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
   systemPrompt: text("system_prompt").notNull(),
