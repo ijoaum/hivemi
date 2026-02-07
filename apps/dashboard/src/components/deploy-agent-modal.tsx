@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { mockRoles } from "@/data/mock-roles";
 import { teams } from "@/types/agent";
-import { X, Loader2, Rocket } from "lucide-react";
+import { X, Loader2, Rocket, ChevronDown } from "lucide-react";
 import { RoleIcon } from "./role-icon";
 
 interface DeployAgentModalProps {
@@ -35,6 +35,19 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
   const [model, setModel] = useState("gpt-4o");
   const [autoStart, setAutoStart] = useState(true);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const roleDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target as Node)) {
+        setRoleDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -90,28 +103,43 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy }: DeployAgentModal
           </div>
 
           {/* Role */}
-          <div>
+          <div className="relative" ref={roleDropdownRef}>
             <label className="block text-sm text-gray-400 mb-2">Role</label>
-            <div className="grid grid-cols-2 gap-2">
-              {mockRoles.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => setRoleId(role.id)}
-                  className={cn(
-                    "p-3 rounded-lg border text-left transition-all flex items-center gap-3",
-                    roleId === role.id
-                      ? "bg-amber-500/20 border-amber-500 text-white"
-                      : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
-                  )}
-                >
-                  <RoleIcon icon={role.icon} className="w-5 h-5 flex-shrink-0" />
-                  <span className="font-medium text-sm truncate">{role.name}</span>
-                </button>
-              ))}
-            </div>
-            {selectedRole && (
-              <p className="mt-2 text-xs text-gray-500">{selectedRole.description}</p>
+            <button
+              type="button"
+              onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-amber-500 transition-colors flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <RoleIcon icon={selectedRole?.icon || "bot"} className="w-5 h-5" />
+                <span>{selectedRole?.name || "Select a role"}</span>
+              </div>
+              <ChevronDown className={cn("w-4 h-4 transition-transform", roleDropdownOpen && "rotate-180")} />
+            </button>
+            
+            {roleDropdownOpen && (
+              <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                {mockRoles.map((role) => (
+                  <button
+                    key={role.id}
+                    type="button"
+                    onClick={() => {
+                      setRoleId(role.id);
+                      setRoleDropdownOpen(false);
+                    }}
+                    className={cn(
+                      "w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 transition-colors text-left",
+                      roleId === role.id ? "bg-amber-500/20 text-amber-400" : "text-gray-300"
+                    )}
+                  >
+                    <RoleIcon icon={role.icon} className="w-5 h-5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{role.name}</p>
+                      <p className="text-xs text-gray-500 truncate">{role.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
