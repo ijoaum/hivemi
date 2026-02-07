@@ -1,36 +1,95 @@
-# 🐝 HiveMI - Hive Mesh Intelligence
+<p align="center">
+  <img src="docs/images/logo.png" alt="HiveMI Logo" width="120" />
+</p>
 
-An AI agent orchestration platform where agents work like a dev squad.
+<h1 align="center">🐝 HiveMI - Hive Mesh Intelligence</h1>
+
+<p align="center">
+  <strong>An AI agent orchestration platform where agents work like a dev squad.</strong>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard-preview.png" alt="HiveMI Dashboard" width="100%" />
+</p>
+
+---
+
+## Overview
+
+HiveMI is a platform for orchestrating AI agents that collaborate like a real development team. Each agent has a specific role (PM, Tech Lead, Developer, QA) and they work together to complete tasks, review code, and ship features.
+
+### Key Features
+
+- 🤖 **Role-based Agents** - PM, Tech Lead, Developer, QA with specialized prompts
+- 🔄 **Real-time Dashboard** - Monitor agents, tasks, and logs in real-time
+- 📱 **Mobile Responsive** - Full functionality on any device
+- 🎯 **Task Management** - Create, assign, and track tasks across teams
+- 🔌 **LLM Agnostic** - Works with OpenAI, Anthropic, and more via Vercel AI SDK
+- 🐳 **Docker Ready** - One command to run the entire stack
+
+---
 
 ## Architecture
 
+HiveMI uses a unified gateway architecture where all external traffic goes through a single port.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        HiveMI Cluster                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────┐     HTTP      ┌──────────────┐                    │
-│  │ Dashboard ├──────────────►│   Manager    │◄── External Tasks │
-│  │  :3000   │               │    :4000     │                    │
-│  └──────────┘               └──────┬───────┘                    │
-│                                    │                             │
-│                                    ▼                             │
-│                           ┌────────────────┐                     │
-│                           │    Registry    │                     │
-│                           │     :4001      │                     │
-│                           │   PostgreSQL   │                     │
-│                           └────────┬───────┘                     │
-│                                    │                             │
-│              ┌─────────────────────┼─────────────────────┐       │
-│              │                     │                     │       │
-│              ▼                     ▼                     ▼       │
-│      ┌─────────────┐       ┌─────────────┐       ┌───────────┐  │
-│      │  PM Agent   │◄─────►│ Tech Lead   │◄─────►│ Developer │  │
-│      │   :3002     │  P2P  │   :3003     │  P2P  │   :3001   │  │
-│      └─────────────┘       └─────────────┘       └───────────┘  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+                    ┌─────────────────────────────────────────────────────────┐
+                    │                    EXTERNAL ACCESS                       │
+                    │                      Port 3000                           │
+                    └───────────────────────────┬─────────────────────────────┘
+                                                │
+                    ┌───────────────────────────▼─────────────────────────────┐
+                    │                                                          │
+                    │                  NEXT.JS GATEWAY                         │
+                    │                     (:3000)                              │
+                    │                                                          │
+                    │   /              → Dashboard UI (React)                  │
+                    │   /api/agents    → Proxy to Registry                     │
+                    │   /api/tasks     → Proxy to Registry                     │
+                    │   /api/roles     → Proxy to Registry                     │
+                    │   /api/teams     → Proxy to Registry                     │
+                    │   /api/demands   → Proxy to Manager                      │
+                    │   /api/events    → SSE real-time updates                 │
+                    │                                                          │
+                    └─────────────────┬───────────────────┬───────────────────┘
+                                      │                   │
+                    ┌─────────────────▼───────┐ ┌────────▼────────────────────┐
+                    │                         │ │                              │
+                    │       REGISTRY          │ │         MANAGER              │
+                    │        (:4001)          │ │         (:4000)              │
+                    │                         │ │                              │
+                    │  - Agent CRUD           │ │  - External task intake      │
+                    │  - Task management      │ │  - Agent orchestration       │
+                    │  - Role definitions     │ │  - Cluster status            │
+                    │  - Team management      │ │  - Health monitoring         │
+                    │  - Logs                 │ │                              │
+                    │                         │ │                              │
+                    │   ┌─────────────────┐   │ └──────────────────────────────┘
+                    │   │   PostgreSQL    │   │
+                    │   │     (:5432)     │   │
+                    │   └─────────────────┘   │
+                    └─────────────────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              │                       │                       │
+              ▼                       ▼                       ▼
+      ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+      │  PM Agent   │◄───────►│  Tech Lead  │◄───────►│  Developer  │
+      │  Reginald   │   P2P   │  Cornelius  │   P2P   │ Bartholomew │
+      └─────────────┘         └─────────────┘         └─────────────┘
 ```
+
+### Components
+
+| Component | Port | Description |
+|-----------|------|-------------|
+| **Dashboard** | 3000 | Next.js 15 + React 19 frontend, serves as the unified gateway |
+| **Registry** | 4001 (internal) | Hono API + Drizzle ORM, data persistence layer |
+| **Manager** | 4000 (internal) | Hono API, agent orchestration and external task intake |
+| **PostgreSQL** | 5432 (internal) | Database for agents, tasks, roles, teams, logs |
+
+---
 
 ## Quick Start
 
@@ -51,42 +110,45 @@ pnpm install
 # Start PostgreSQL
 docker-compose up -d postgres
 
-# Run migrations
-cd apps/registry && pnpm db:migrate
+# Run database migrations
+pnpm --filter @hivemi/registry db:migrate
 
-# Start services (in separate terminals)
-pnpm --filter @hivemi/registry dev    # Registry on :4001
-pnpm --filter @hivemi/manager dev     # Manager on :4000
-pnpm --filter dashboard dev           # Dashboard on :3000
+# Seed initial data (roles, teams)
+pnpm --filter @hivemi/registry db:seed
+
+# Start all services
+pnpm dev
 ```
 
-### Using the CLI
+Open http://localhost:3000 to access the dashboard.
+
+### Using Docker Compose
 
 ```bash
-# Check cluster status
-pnpm --filter @hivemi/cli dev status
+# Start everything
+docker-compose up -d
 
-# List agents
-pnpm --filter @hivemi/cli dev agents list
+# View logs
+docker-compose logs -f
 
-# Create a task
-pnpm --filter @hivemi/cli dev tasks create "Build login page" --team <team-id> --priority high
-
-# List tasks
-pnpm --filter @hivemi/cli dev tasks list
+# Stop
+docker-compose down
 ```
+
+---
 
 ## Project Structure
 
 ```
 hivemi/
 ├── apps/
-│   ├── dashboard/        # Next.js 15 + React 19 + Tremor
+│   ├── dashboard/        # Next.js 15 + React 19 (unified gateway)
 │   ├── registry/         # Hono API + Drizzle + PostgreSQL
-│   └── manager/          # Hono API (external interface)
+│   └── manager/          # Hono API (agent orchestration)
 ├── packages/
 │   ├── protocol/         # Shared types + Zod schemas
 │   ├── agent-runtime/    # Base agent framework
+│   ├── api-client/       # TypeScript API client
 │   ├── llm/              # Vercel AI SDK wrapper
 │   └── cli/              # Command-line interface
 ├── agents/
@@ -94,74 +156,147 @@ hivemi/
 │   ├── tech-lead/        # Tech Lead agent
 │   ├── developer/        # Developer agent
 │   └── qa/               # QA Engineer agent
-└── docs/
+├── docs/
+│   └── images/           # Screenshots and logo
+└── docker-compose.yml
 ```
 
-## Stack
+---
 
-- **Runtime**: Node.js 22, TypeScript 5
-- **Package Manager**: pnpm workspaces
-- **API Framework**: Hono
-- **Database**: PostgreSQL 16 + Drizzle ORM
-- **LLM**: Vercel AI SDK (OpenAI, Anthropic)
-- **Frontend**: Next.js 15, React 19, Tailwind CSS v4, Tremor
-- **Validation**: Zod
+## Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| **Runtime** | Node.js 22, TypeScript 5 |
+| **Package Manager** | pnpm workspaces |
+| **Frontend** | Next.js 15, React 19, Tailwind CSS v4 |
+| **API** | Hono |
+| **Database** | PostgreSQL 16 + Drizzle ORM |
+| **LLM** | Vercel AI SDK (OpenAI, Anthropic) |
+| **Validation** | Zod |
+
+---
 
 ## Agent Roles
 
-| Role | Name | Responsibilities |
-|------|------|------------------|
-| 📋 PM | Reginald | Analyzes requirements, creates user stories, prioritizes backlog |
-| 🏗️ Tech Lead | Cornelius | Makes architectural decisions, reviews code, mentors developers |
-| ⚙️ Backend Dev | Bartholomew | Develops APIs, handles database operations |
-| 🧪 QA | Percival | Writes tests, finds bugs, ensures quality |
+| Role | Name | Emoji | Responsibilities |
+|------|------|-------|------------------|
+| PM | Reginald | 📋 | Analyzes requirements, creates user stories, prioritizes backlog |
+| Tech Lead | Cornelius | 🏗️ | Makes architectural decisions, reviews code, mentors developers |
+| Developer | Bartholomew | ⚙️ | Implements features, writes code, fixes bugs |
+| QA | Percival | 🧪 | Writes tests, finds bugs, ensures quality |
+
+---
 
 ## Environment Variables
+
+Create a `.env` file in the root:
 
 ```bash
 # Database
 DATABASE_URL=postgresql://hivemi:hivemi@localhost:5432/hivemi
 
-# Services
-REGISTRY_URL=http://localhost:4001
-MANAGER_URL=http://localhost:4000
-
-# Auth
-HIVEMI_SECRET=your-shared-secret
-
-# LLM
+# LLM (at least one required)
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional
+HIVEMI_SECRET=your-shared-secret
 ```
 
-## API Endpoints
+---
 
-### Registry (:4001)
+## API Reference
+
+All API endpoints are accessible through the dashboard gateway at port 3000.
+
+### Agents
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /health | Health check |
-| GET/POST | /api/agents | List/Create agents |
-| GET/PUT/DELETE | /api/agents/:id | Agent CRUD |
-| POST | /api/agents/:id/heartbeat | Agent heartbeat |
-| GET/POST | /api/roles | List/Create roles |
-| GET/POST | /api/tasks | List/Create tasks |
+| GET | /api/agents | List all agents |
+| POST | /api/agents | Create agent |
+| GET | /api/agents/:id | Get agent by ID |
+| PUT | /api/agents/:id | Update agent |
+| DELETE | /api/agents/:id | Delete agent |
+
+### Tasks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/tasks | List all tasks |
+| POST | /api/tasks | Create task |
+| GET | /api/tasks/:id | Get task by ID |
 | POST | /api/tasks/:id/retry | Retry failed task |
 | POST | /api/tasks/:id/cancel | Cancel task |
-| GET/POST | /api/teams | List/Create teams |
-| GET | /api/logs | Get logs |
 
-### Manager (:4000)
+### Teams & Roles
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /health | Health check |
-| POST | /api/demands | Create external task |
-| GET | /api/status | Cluster status |
-| GET | /api/agents | Proxy to registry |
-| GET | /api/roles | Proxy to registry |
-| GET | /api/teams | Proxy to registry |
+| GET | /api/teams | List all teams |
+| GET | /api/roles | List all roles |
+
+### External Tasks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/demands | Create external task (via Manager) |
+
+---
+
+## CLI Usage
+
+```bash
+# Check cluster status
+pnpm cli status
+
+# List agents
+pnpm cli agents list
+
+# Create a task
+pnpm cli tasks create "Build login page" --team <team-id> --priority high
+
+# List tasks
+pnpm cli tasks list
+```
+
+---
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run in development mode
+pnpm dev
+
+# Run tests
+pnpm test
+
+# Build for production
+pnpm build
+
+# Type check
+pnpm typecheck
+
+# Lint
+pnpm lint
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
 
 ## License
 
-MIT
+MIT © [João Mendonça](https://github.com/ijoaum)
