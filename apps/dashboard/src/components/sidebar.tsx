@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -22,9 +22,14 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
 
+  const prevPathname = React.useRef(pathname);
+
   // Close sidebar on route change (mobile)
   useEffect(() => {
-    if (onClose) onClose();
+    if (prevPathname.current !== pathname && onClose) {
+      onClose();
+    }
+    prevPathname.current = pathname;
   }, [pathname, onClose]);
 
   return (
