@@ -1,0 +1,83 @@
+version: "3.8"
+
+services:
+  # ===================
+  # Database
+  # ===================
+  postgres:
+    image: postgres:16-alpine
+    container_name: hivemi-postgres
+    environment:
+      POSTGRES_USER: hivemi
+      POSTGRES_PASSWORD: hivemi
+      POSTGRES_DB: hivemi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hivemi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ===================
+  # Registry
+  # ===================
+  registry:
+    build:
+      context: .
+      dockerfile: packages/registry/Dockerfile
+    container_name: hivemi-registry
+    environment:
+      - NODE_ENV=production
+      - REGISTRY_PORT=4001
+      - DATABASE_URL=postgresql://hivemi:hivemi@postgres:5432/hivemi
+      - HIVEMI_SECRET=${HIVEMI_SECRET}
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ===================
+  # Manager
+  # ===================
+  manager:
+    build:
+      context: .
+      dockerfile: packages/manager/Dockerfile
+    container_name: hivemi-manager
+    environment:
+      - NODE_ENV=production
+      - MANAGER_PORT=4000
+      - REGISTRY_URL=http://registry:4001
+      - HIVEMI_SECRET=${HIVEMI_SECRET}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - registry
+
+  # ===================
+  # Example Agents (uncomment to use)
+  # ===================
+  
+  # agent-pm:
+  #   build:
+  #     context: .
+  #     dockerfile: agents/pm/Dockerfile
+  #   container_name: hivemi-agent-pm
+  #   environment:
+  #     - NODE_ENV=production
+  #     - AGENT_ID=pm-1
+  #     - AGENT_PORT=3001
+  #     - REGISTRY_URL=http://registry:4001
+  #     - HIVEMI_SECRET=${HIVEMI_SECRET}
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #   ports:
+  #     - "3001:3001"
+  #   depends_on:
+  #     - registry
+
+volumes:
+  postgres_data:
