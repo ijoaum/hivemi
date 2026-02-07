@@ -1,6 +1,7 @@
 "use client";
 
 import { Role } from "@/types/role";
+import { RoleIcon } from "@/components/role-icon";
 import { cn } from "@/lib/utils";
 
 interface RoleCardProps {
@@ -35,7 +36,9 @@ export function RoleCard({ role, onClick }: RoleCardProps) {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-3xl">{role.icon}</span>
+          <div className={cn("p-2 rounded-lg", colors.bg, colors.text)}>
+            <RoleIcon icon={role.icon} className="w-6 h-6" />
+          </div>
           <div>
             <h3 className={cn("text-lg font-semibold", colors.text)}>{role.name}</h3>
             <p className="text-sm text-gray-500">@{role.slug}</p>

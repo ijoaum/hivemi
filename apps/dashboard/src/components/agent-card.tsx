@@ -2,11 +2,12 @@
 
 import { Agent, AgentStatus } from "@/types/agent";
 import { formatUptime } from "@/data/mock-agents";
+import { RoleIcon } from "@/components/role-icon";
 import { cn } from "@/lib/utils";
-import { Bot, Clock, BarChart3, Settings, FileText } from "lucide-react";
+import { Clock, BarChart3, Settings, FileText } from "lucide-react";
 
 interface AgentCardProps {
-  agent: Agent;
+  agent: Agent & { roleIcon?: string };
   onViewLogs?: () => void;
   onConfigure?: () => void;
 }
@@ -64,7 +65,9 @@ export function AgentCard({ agent, onViewLogs, onConfigure }: AgentCardProps) {
       {/* Header Row */}
       <div className="flex items-center justify-between mb-2 md:mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <Bot className="w-5 h-5 md:w-6 md:h-6 text-amber-500 shrink-0" />
+          <div className="w-5 h-5 md:w-6 md:h-6 text-amber-500 shrink-0">
+            <RoleIcon icon={agent.roleIcon || "bot"} className="w-5 h-5 md:w-6 md:h-6" />
+          </div>
           <div className="min-w-0">
             <h3 className="text-sm md:text-base font-semibold text-gray-900 dark:text-white truncate">
               {agent.name}

@@ -82,19 +82,23 @@ export default function Home() {
   // Convert API agents to display format
   const agents = useMemo(() => {
     if (!apiAgents?.length) return [];
-    return apiAgents.map(a => ({
-      id: a.id,
-      name: a.name,
-      role: apiRoles?.find(r => r.id === a.roleId)?.name || "Agent",
-      team: a.teamId,
-      teamId: a.teamId,
-      status: a.status,
-      currentTask: a.currentTaskId ? "Processing task..." : undefined,
-      progress: a.status === "working" ? Math.floor(Math.random() * 60) + 20 : undefined,
-      uptime: Math.floor(Math.random() * 28800) + 3600,
-      tasksToday: Math.floor(Math.random() * 50) + 10,
-      model: a.model,
-    }));
+    return apiAgents.map(a => {
+      const role = apiRoles?.find(r => r.id === a.roleId);
+      return {
+        id: a.id,
+        name: a.name,
+        role: role?.name || "Agent",
+        roleIcon: role?.icon || "bot",
+        team: a.teamId,
+        teamId: a.teamId,
+        status: a.status,
+        currentTask: a.currentTaskId ? "Processing task..." : undefined,
+        progress: a.status === "working" ? Math.floor(Math.random() * 60) + 20 : undefined,
+        uptime: Math.floor(Math.random() * 28800) + 3600,
+        tasksToday: Math.floor(Math.random() * 50) + 10,
+        model: a.model,
+      };
+    });
   }, [apiAgents, apiRoles]);
 
   // Calculate stats from agents
