@@ -82,7 +82,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
         "bg-white dark:bg-gray-900",
         status.borderColor,
         agent.status === "working" && "animate-pulse-subtle",
-        agent.status === "offline" && "opacity-60"
+        agent.status === "offline" && "opacity-75"
       )}
     >
       {/* Header Row */}
@@ -151,7 +151,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-44 bg-gray-900 border border-gray-600 rounded-xl shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-2 w-44 bg-[#1a1a2e] border border-gray-600 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.7)] overflow-hidden z-50">
                 {/* Start / Stop */}
                 {isOnline ? (
                   <button
