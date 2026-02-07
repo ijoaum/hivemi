@@ -11,6 +11,7 @@ interface UseApiResult<T> {
   data: T | undefined;
   error: Error | null;
   isLoading: boolean;
+  loading: boolean; // alias for isLoading
   refetch: () => Promise<void>;
 }
 
@@ -44,5 +45,5 @@ export function useApi<T>(
     }
   }, [refetch, options.refetchInterval]);
 
-  return { data, error, isLoading, refetch };
+  return { data, error, isLoading, loading: isLoading, refetch };
 }
