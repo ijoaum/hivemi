@@ -1,5 +1,54 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #48: Registry — Telemetry & Deploy Status Endpoints
+
+### Summary
+Added telemetry submission/query and deploy lifecycle tracking endpoints to the Registry API. Dashboard proxy routes included.
+
+### Done
+- **Protocol schemas:** `SubmitTelemetrySchema` (POST telemetry validation), `UpdateDeploySchema` (PUT deploy validation) added to `@hivemi/protocol`
+- **Telemetry routes** (`apps/registry/src/routes/telemetry.ts`):
+  - `POST /api/agents/:id/telemetry` — daemon submits metrics (infra, llm, tasks, daemon), validates with Zod, auto-updates agent lastHeartbeat
+  - `GET /api/agents/:id/telemetry` — latest metrics (supports `?limit=N`)
+  - `GET /api/agents/:id/telemetry/history` — historical with `?from=&to=&limit=` (defaults: last 24h, limit 100)
+  - `POST /api/telemetry/cleanup` — retention: keeps 24h detailed, aggregates to 1/hour for 24h-7d, deletes >7d
+- **Deploy routes** (`apps/registry/src/routes/deploys.ts`):
+  - `POST /api/deploys` — register new deploy with initial phases (provisioning→installing→configuring→registering)
+  - `GET /api/deploys` — list recent deploys (supports `?limit=&status=`)
+  - `GET /api/deploys/:id` — single deploy status
+  - `PUT /api/deploys/:id` — update phase/status/instanceId/agentId/error, auto-manages agent status on "ready" or "failed"
+- **Dashboard proxy routes:** 6 Next.js API routes proxy all new endpoints to registry
+- **Route mounting:** telemetry and deploy routes mounted in main `routes.ts`
+
+### Key Decisions
+- **Telemetry also updates lastHeartbeat** — receiving telemetry from an agent is proof of liveness, so we set lastHeartbeat on the agent row. Avoids the daemon needing two separate calls.
+- **Cleanup via SQL aggregation** — `POST /api/telemetry/cleanup` uses a CTE with `array_agg` to identify duplicate records within the same hour, keeping only the most recent per hour. This makes retention automatic without needing a separate aggregation table.
+- **Deploy phase tracking is append-based** — the `PUT /api/deploys/:id` endpoint accepts a `phase` object and merges it into the phases array (update existing by name or append new). The Deploy Orchestrator calls this as it progresses through bootstrap phases.
+- **Agent status auto-update on deploy completion** — when a deploy transitions to "ready", the linked agent is set to "idle". On "failed", agent goes to "error". This keeps agent status consistent without the Orchestrator needing separate calls.
+- **Zod validation on all mutations** — both telemetry submission and deploy updates are validated with Zod schemas, returning 400 with details on validation failure.
+
+### Endpoints Summary
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/agents/:id/telemetry` | Daemon submits metrics |
+| GET | `/api/agents/:id/telemetry` | Dashboard queries latest |
+| GET | `/api/agents/:id/telemetry/history` | Historical with time range |
+| POST | `/api/telemetry/cleanup` | Retention cleanup |
+| POST | `/api/deploys` | Register new deploy |
+| GET | `/api/deploys` | List recent deploys |
+| GET | `/api/deploys/:id` | Deploy status |
+| PUT | `/api/deploys/:id` | Update deploy phase/status |
+
+### Commits
+- `acd31c9` — feat(registry): telemetry and deploy status endpoints
+
+### Next
+- #47 (Agent Daemon) — will call `POST /api/agents/:id/telemetry` periodically
+- #49 (Deploy Orchestrator) — will use deploy endpoints to track lifecycle
+- #50 (Dashboard) — will use telemetry GET endpoints to show agent metrics
+
+---
+
 ## 2026-02-09 — Issue #47: Agent Daemon — Resident VM Process
 
 ### Summary
