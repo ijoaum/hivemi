@@ -1,6 +1,9 @@
 import { createAgent } from "@hivemi/agent-runtime";
 import { complete, parseModelString } from "@hivemi/llm";
 import type { Task } from "@hivemi/protocol";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const AGENT_ID = process.env.AGENT_ID || crypto.randomUUID();
 const AGENT_NAME = process.env.AGENT_NAME || "Percival";
@@ -11,47 +14,30 @@ const MODEL = process.env.MODEL || "openai/gpt-4o";
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 const HIVEMI_SECRET = process.env.HIVEMI_SECRET;
 
-const SYSTEM_PROMPT = `You are Percival, a QA Engineer agent in a software development team.
+// ---------------------------------------------------------------------------
+// Load SOUL.md — system prompt from file (falls back to inline default)
+// ---------------------------------------------------------------------------
 
-Your responsibilities:
-1. Review completed development work
-2. Write test cases and test plans
-3. Identify bugs and edge cases
-4. Verify acceptance criteria are met
-5. Ensure code quality and coverage
-6. Report issues clearly and actionably
+function loadSoulMd(): string {
+  const workspacePath = resolve(
+    process.env.HOME || "/home/openclaw",
+    ".openclaw/workspace/SOUL.md",
+  );
+  if (existsSync(workspacePath)) {
+    return readFileSync(workspacePath, "utf-8");
+  }
 
-When you receive work to review:
-1. Understand the requirements and acceptance criteria
-2. Identify test scenarios (happy path, edge cases, error cases)
-3. Create test cases with clear steps
-4. Evaluate the implementation against requirements
-5. Document any issues found
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const devPath = resolve(__dirname, "../SOUL.md");
+  if (existsSync(devPath)) {
+    return readFileSync(devPath, "utf-8");
+  }
 
-Always respond in this JSON format:
-{
-  "review": "Overall assessment of the work",
-  "testPlan": {
-    "scenarios": [
-      {
-        "name": "Scenario name",
-        "type": "happy-path|edge-case|error-case|security|performance",
-        "steps": ["Step 1", "Step 2"],
-        "expectedResult": "What should happen"
-      }
-    ]
-  },
-  "issues": [
-    {
-      "severity": "critical|major|minor|cosmetic",
-      "description": "Issue description",
-      "location": "Where the issue is",
-      "suggestion": "How to fix it"
-    }
-  ],
-  "verdict": "approved|needs-changes|rejected",
-  "notes": "Additional notes or recommendations"
-}`;
+  console.warn("[QA] SOUL.md not found, using inline fallback");
+  return `You are a QA Engineer agent. Review work, write test plans, identify bugs and edge cases, verify acceptance criteria. Respond with structured JSON output.`;
+}
+
+const SYSTEM_PROMPT = loadSoulMd();
 
 const llmConfig = parseModelString(MODEL);
 
