@@ -288,6 +288,8 @@ app.get("/api/tasks", async (c) => {
   try {
     const status = c.req.query("status");
     const teamId = c.req.query("teamId");
+    const roleTarget = c.req.query("roleTarget");
+    const limit = c.req.query("limit");
     
     let query = db.select().from(tasks).orderBy(desc(tasks.createdAt)).$dynamic();
     
@@ -296,6 +298,12 @@ app.get("/api/tasks", async (c) => {
     }
     if (teamId) {
       query = query.where(eq(tasks.teamId, teamId));
+    }
+    if (roleTarget) {
+      query = query.where(eq(tasks.roleTarget, roleTarget));
+    }
+    if (limit) {
+      query = query.limit(Math.min(parseInt(limit), 500));
     }
     
     const result = await query;

@@ -254,6 +254,53 @@ app.get("/regions", async (c) => {
 });
 
 // =============================================================================
+// GET /api/settings/cloud/internal — Full config with decrypted secrets
+// Internal-only: used by Manager's Deploy Orchestrator
+// =============================================================================
+
+app.get("/internal", async (c) => {
+  try {
+    const configRow = await db.select().from(settings).where(eq(settings.key, CLOUD_CONFIG_KEY));
+    if (configRow.length === 0) {
+      return c.json({ success: false, error: "Cloud config not configured" }, 404);
+    }
+
+    const config = configRow[0].value as Record<string, unknown>;
+
+    // Decrypt secrets
+    let apiToken: string | null = null;
+    let sshPrivateKey: string | null = null;
+
+    const secretsRow = await db.select().from(settings).where(eq(settings.key, CLOUD_SECRETS_KEY));
+    if (secretsRow.length > 0) {
+      const secrets = secretsRow[0].value as Record<string, unknown>;
+      if (secrets.apiToken) {
+        try { apiToken = decrypt(secrets.apiToken as string); } catch { /* key rotated */ }
+      }
+      if (secrets.sshPrivateKey) {
+        try { sshPrivateKey = decrypt(secrets.sshPrivateKey as string); } catch { /* key rotated */ }
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        provider: config.provider ?? "digitalocean",
+        region: config.region ?? "nyc1",
+        instanceSize: config.instanceSize ?? "small",
+        sshKeyId: (config.sshKeyId as string) ?? null,
+        sshPublicKey: (config.sshPublicKey as string) ?? null,
+        apiToken,
+        sshPrivateKey,
+      },
+    });
+  } catch (error) {
+    logger.error(error, "Failed to get internal cloud config");
+    return c.json({ success: false, error: "Failed to get cloud config" }, 500);
+  }
+});
+
+// =============================================================================
 // POST /api/settings/cloud/ssh-key/generate — Generate ed25519 keypair
 // =============================================================================
 
