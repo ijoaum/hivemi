@@ -31,6 +31,7 @@ Implemented all database schema changes for the deploy system. Updated Drizzle s
 - `5592f83` — feat(db): deploy system schema
 - `aa87973` — feat(protocol): update types for deploy system
 - `e45a0c8` — refactor: update codebase for new enum values
+- `02d43b5` — fix(db): add FK comment + drizzle migration meta
 
 ### Next: #44 (Provisioner) — requires this migration to be run first
 
