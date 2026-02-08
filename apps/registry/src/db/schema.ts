@@ -212,7 +212,8 @@ export type TelemetryInfra = {
   memTotal: number;
   diskUsed: number;
   diskTotal: number;
-  loadAvg: number[];
+  /** Single number (1-min avg per protocol) or array [1m, 5m, 15m] */
+  loadAvg: number | number[];
 };
 
 export type TelemetryLlm = {

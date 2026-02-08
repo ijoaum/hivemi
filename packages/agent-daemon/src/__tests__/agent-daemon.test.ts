@@ -363,9 +363,12 @@ describe("TelemetryCollector", () => {
   it("builds a telemetry snapshot", async () => {
     const snapshot = await collector.buildSnapshot();
 
+    expect(snapshot.ts).toBeDefined();
+    expect(new Date(snapshot.ts).getTime()).not.toBeNaN();
     expect(snapshot.infra.memTotal).toBeGreaterThan(0);
     expect(snapshot.infra.cpu).toBeGreaterThanOrEqual(0);
-    expect(snapshot.infra.loadAvg).toHaveLength(3);
+    expect(typeof snapshot.infra.loadAvg).toBe("number");
+    expect(snapshot.infra.loadAvg).toBeGreaterThanOrEqual(0);
     expect(snapshot.daemon.version).toBe("0.1.0");
     expect(snapshot.daemon.openclawStatus).toBe("running");
     expect(snapshot.tasks.completed).toBe(5);

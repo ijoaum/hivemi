@@ -132,6 +132,7 @@ export class TelemetryCollector {
         : 0;
 
     return {
+      ts: new Date().toISOString(),
       infra,
       llm: {
         requests: this._llmRequests,
@@ -180,7 +181,8 @@ export class TelemetryCollector {
       memTotal: totalMem,
       diskUsed,
       diskTotal,
-      loadAvg: loadAvg.map((v) => Math.round(v * 100) / 100),
+      // Protocol spec (Issue #54): single number = 1-minute load average
+      loadAvg: Math.round(loadAvg[0] * 100) / 100,
     };
   }
 

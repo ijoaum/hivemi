@@ -274,34 +274,48 @@ export type CreateDeploy = z.infer<typeof CreateDeploySchema>;
 // AGENT TELEMETRY
 // =============================================================================
 
+/**
+ * Infrastructure metrics — snapshot of VM resource usage.
+ * `loadAvg` accepts either a single number (1-min average as per protocol spec)
+ * or an array of 3 numbers ([1min, 5min, 15min]) for backward compat.
+ */
 export const TelemetryInfraSchema = z.object({
-  cpu: z.number(),
-  memUsed: z.number(),
-  memTotal: z.number(),
-  diskUsed: z.number(),
-  diskTotal: z.number(),
-  loadAvg: z.array(z.number()),
+  cpu: z.number().min(0).max(100),
+  memUsed: z.number().int().nonnegative(),
+  memTotal: z.number().int().positive(),
+  diskUsed: z.number().int().nonnegative(),
+  diskTotal: z.number().int().nonnegative(),
+  loadAvg: z.union([z.number().nonnegative(), z.array(z.number().nonnegative())]),
 });
 export type TelemetryInfra = z.infer<typeof TelemetryInfraSchema>;
 
+/**
+ * LLM usage metrics — deltas since last report.
+ */
 export const TelemetryLlmSchema = z.object({
-  requests: z.number(),
-  promptTokens: z.number(),
-  completionTokens: z.number(),
-  errors: z.number(),
-  avgLatencyMs: z.number(),
+  requests: z.number().int().nonnegative(),
+  promptTokens: z.number().int().nonnegative(),
+  completionTokens: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  avgLatencyMs: z.number().nonnegative(),
 });
 export type TelemetryLlm = z.infer<typeof TelemetryLlmSchema>;
 
+/**
+ * Task execution metrics — current state snapshot.
+ */
 export const TelemetryTasksSchema = z.object({
-  completed: z.number(),
-  failed: z.number(),
-  active: z.number(),
+  completed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  active: z.number().int().nonnegative(),
 });
 export type TelemetryTasks = z.infer<typeof TelemetryTasksSchema>;
 
+/**
+ * Daemon health and version info.
+ */
 export const TelemetryDaemonSchema = z.object({
-  uptime: z.number(),
+  uptime: z.number().int().nonnegative(),
   version: z.string(),
   openclawStatus: z.string(),
 });
@@ -320,9 +334,16 @@ export type AgentTelemetry = z.infer<typeof AgentTelemetrySchema>;
 
 /**
  * Schema for POST /api/agents/:id/telemetry — daemon submits metrics.
- * All metric groups are optional (daemon may send partial reports).
+ *
+ * Protocol spec (Issue #54):
+ * - `ts`: ISO 8601 timestamp from the daemon (optional, server uses now() as fallback)
+ * - All metric groups are optional (daemon may send partial reports)
+ * - Sent every 60 seconds
+ * - `infra` values are snapshots, `llm` values are deltas since last report
  */
 export const SubmitTelemetrySchema = z.object({
+  /** ISO 8601 timestamp from the daemon */
+  ts: z.string().datetime().optional(),
   infra: TelemetryInfraSchema.optional(),
   llm: TelemetryLlmSchema.optional(),
   tasks: TelemetryTasksSchema.optional(),

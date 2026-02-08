@@ -138,13 +138,16 @@ export type OpenClawStatus = "running" | "stopped" | "error";
 // ---------------------------------------------------------------------------
 
 export interface TelemetrySnapshot {
+  /** ISO 8601 timestamp from the daemon (protocol spec Issue #54) */
+  ts: string;
   infra: {
     cpu: number;
     memUsed: number;
     memTotal: number;
     diskUsed: number;
     diskTotal: number;
-    loadAvg: number[];
+    /** 1-minute load average (single number per protocol spec) */
+    loadAvg: number;
   };
   llm: {
     requests: number;
