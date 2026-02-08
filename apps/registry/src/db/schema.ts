@@ -89,6 +89,7 @@ export type DeployPhase = {
 
 export const deploys = pgTable("deploys", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // FK to agents handled at DB level (SQL migration) to avoid circular reference with agents.deployId
   agentId: uuid("agent_id"),
   agentName: varchar("agent_name", { length: 100 }).notNull(),
   cloudProvider: cloudProviderEnum("cloud_provider").notNull(),
