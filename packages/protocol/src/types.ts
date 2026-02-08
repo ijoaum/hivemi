@@ -295,6 +295,61 @@ export const SettingSchema = z.object({
 export type Setting = z.infer<typeof SettingSchema>;
 
 // =============================================================================
+// CLOUD CONFIG (Settings)
+// =============================================================================
+
+/**
+ * Schema for updating cloud configuration via PUT /api/settings/cloud.
+ * Secrets (apiToken, sshPrivateKey) are write-only — never returned by GET.
+ */
+export const UpdateCloudConfigSchema = z.object({
+  provider: CloudProviderSchema,
+  region: z.string().min(1).max(50),
+  instanceSize: InstanceSizeSchema,
+  apiToken: z.string().min(1).optional(),
+  sshKeyId: z.string().max(100).optional(),
+  sshPublicKey: z.string().optional(),
+  sshPrivateKey: z.string().optional(),
+});
+export type UpdateCloudConfig = z.infer<typeof UpdateCloudConfigSchema>;
+
+/**
+ * Response shape for GET /api/settings/cloud.
+ * Secrets are redacted — only boolean flags indicate presence.
+ */
+export const CloudConfigResponseSchema = z.object({
+  provider: CloudProviderSchema,
+  region: z.string(),
+  instanceSize: InstanceSizeSchema,
+  hasApiToken: z.boolean(),
+  hasSSHKey: z.boolean(),
+  sshKeyId: z.string().nullable(),
+});
+export type CloudConfigResponse = z.infer<typeof CloudConfigResponseSchema>;
+
+/**
+ * Response shape for POST /api/settings/cloud/test.
+ */
+export const CloudTestResultSchema = z.object({
+  valid: z.boolean(),
+  account: z.string().optional(),
+  dropletLimit: z.number().optional(),
+  error: z.string().optional(),
+});
+export type CloudTestResult = z.infer<typeof CloudTestResultSchema>;
+
+/**
+ * A region option returned by GET /api/settings/cloud/regions.
+ */
+export const CloudRegionSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  available: z.boolean(),
+  flag: z.string().optional(),
+});
+export type CloudRegion = z.infer<typeof CloudRegionSchema>;
+
+// =============================================================================
 // TASK PROGRESS
 // =============================================================================
 

@@ -9,6 +9,7 @@ import {
   CreateRoleSchema, 
   CreateTaskSchema 
 } from "@hivemi/protocol";
+import cloudSettings from "./routes/cloud-settings.js";
 
 const app = new Hono();
 
@@ -424,5 +425,11 @@ app.post("/api/logs", async (c) => {
     return c.json({ success: false, error: "Failed to create log" }, 500);
   }
 });
+
+// =============================================================================
+// SETTINGS — Cloud Config
+// =============================================================================
+
+app.route("/api/settings/cloud", cloudSettings);
 
 export default app;
