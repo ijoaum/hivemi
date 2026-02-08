@@ -1,0 +1,331 @@
+// =============================================================================
+// Agent Daemon — Entry Point
+//
+// Resident process on each agent VM. Responsibilities:
+// 1. Register with the HiveMI Registry on startup
+// 2. Poll the task queue every 15s and execute via OpenClaw
+// 3. Send heartbeat every 30s
+// 4. Collect and send telemetry every 60s
+// 5. Batch and ship logs every 5 min
+// 6. Monitor OpenClaw gateway health
+// 7. Graceful shutdown on SIGTERM/SIGINT
+// =============================================================================
+
+import { RegistryClient } from "./registry-client.js";
+import { OpenClawClient } from "./openclaw-client.js";
+import { TaskPoller } from "./task-poller.js";
+import { TelemetryCollector } from "./telemetry.js";
+import {
+  consoleLogger,
+  loadConfigFromEnv,
+  type DaemonConfig,
+  type DaemonLogger,
+  type LogEntry,
+  type OpenClawStatus,
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Daemon class — orchestrates all loops
+// ---------------------------------------------------------------------------
+
+export class AgentDaemon {
+  private readonly config: DaemonConfig;
+  private readonly logger: DaemonLogger;
+  private readonly registry: RegistryClient;
+  private readonly openclaw: OpenClawClient;
+  private readonly taskPoller: TaskPoller;
+  private readonly telemetry: TelemetryCollector;
+
+  private readonly logBuffer: LogEntry[] = [];
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private logShipTimer: ReturnType<typeof setInterval> | null = null;
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+
+  // Track consecutive OpenClaw failures for restart logic
+  private openclawFailures = 0;
+  private static readonly MAX_OPENCLAW_FAILURES = 3;
+
+  constructor(config: DaemonConfig, logger: DaemonLogger = consoleLogger) {
+    this.config = config;
+    this.logger = logger;
+
+    this.registry = new RegistryClient(config, logger);
+    this.openclaw = new OpenClawClient(config, logger);
+
+    this.taskPoller = new TaskPoller(
+      config,
+      this.registry,
+      this.openclaw,
+      logger,
+      this.logBuffer,
+    );
+
+    this.telemetry = new TelemetryCollector(
+      config,
+      this.registry,
+      this.openclaw,
+      logger,
+      () => ({
+        completed: this.taskPoller.tasksCompleted,
+        failed: this.taskPoller.tasksFailed,
+        active: this.taskPoller.activeTask ? 1 : 0,
+      }),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Start
+  // -------------------------------------------------------------------------
+
+  async start(): Promise<void> {
+    this.logger.info("=================================================");
+    this.logger.info(`HiveMI Agent Daemon starting`);
+    this.logger.info(`Agent: ${this.config.agentName} (${this.config.agentId})`);
+    this.logger.info(`Registry: ${this.config.registryUrl}`);
+    this.logger.info(`OpenClaw: ${this.config.openclawUrl}`);
+    this.logger.info("=================================================");
+
+    this.running = true;
+
+    // 1. Register with registry
+    try {
+      await this.registry.register();
+      this.addLog("lifecycle", "Daemon started and registered");
+    } catch (err) {
+      this.logger.error("Failed to register with registry", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Continue anyway — heartbeat will keep trying
+      this.addLog("error", `Registration failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // 2. Start heartbeat loop
+    this.startHeartbeat();
+
+    // 3. Start telemetry loop
+    this.telemetry.start();
+
+    // 4. Start log shipping loop
+    this.startLogShipping();
+
+    // 5. Start OpenClaw health check loop
+    this.startHealthCheck();
+
+    // 6. Start task polling loop
+    this.taskPoller.start();
+
+    this.logger.info("All loops started — daemon is operational");
+  }
+
+  // -------------------------------------------------------------------------
+  // Stop (graceful shutdown)
+  // -------------------------------------------------------------------------
+
+  async stop(): Promise<void> {
+    if (!this.running) return;
+    this.running = false;
+
+    this.logger.info("Graceful shutdown initiated...");
+
+    // 1. Stop all loops
+    this.taskPoller.stop();
+    this.telemetry.stop();
+
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.logShipTimer) {
+      clearInterval(this.logShipTimer);
+      this.logShipTimer = null;
+    }
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
+
+    // 2. Ship remaining logs
+    this.addLog("lifecycle", "Daemon shutting down");
+    await this.shipLogs();
+
+    // 3. Set agent offline in registry
+    try {
+      await this.registry.setOffline();
+    } catch (err) {
+      this.logger.error("Failed to set offline status", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    this.logger.info("Daemon stopped");
+  }
+
+  // -------------------------------------------------------------------------
+  // Heartbeat loop
+  // -------------------------------------------------------------------------
+
+  private startHeartbeat(): void {
+    this.logger.info(`Heartbeat starting (interval: ${this.config.heartbeatIntervalMs}ms)`);
+
+    const beat = async () => {
+      try {
+        await this.registry.heartbeat();
+        this.logger.debug("Heartbeat sent");
+      } catch (err) {
+        this.logger.warn("Heartbeat failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    // Send first heartbeat immediately
+    void beat();
+    this.heartbeatTimer = setInterval(() => void beat(), this.config.heartbeatIntervalMs);
+  }
+
+  // -------------------------------------------------------------------------
+  // Log shipping loop
+  // -------------------------------------------------------------------------
+
+  private startLogShipping(): void {
+    this.logger.info(`Log shipping starting (interval: ${this.config.logBatchIntervalMs}ms)`);
+
+    this.logShipTimer = setInterval(() => void this.shipLogs(), this.config.logBatchIntervalMs);
+  }
+
+  private async shipLogs(): Promise<void> {
+    if (this.logBuffer.length === 0) return;
+
+    // Drain buffer
+    const entries = this.logBuffer.splice(0, this.logBuffer.length);
+    this.logger.debug(`Shipping ${entries.length} log entries`);
+
+    try {
+      await this.registry.sendLogs(entries);
+    } catch (err) {
+      this.logger.warn("Failed to ship logs", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Put them back (front of buffer) for retry
+      this.logBuffer.unshift(...entries);
+      // Cap buffer to avoid memory leak
+      if (this.logBuffer.length > 1000) {
+        this.logBuffer.splice(0, this.logBuffer.length - 500);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // OpenClaw health check loop
+  // -------------------------------------------------------------------------
+
+  private startHealthCheck(): void {
+    const checkIntervalMs = this.config.telemetryIntervalMs; // Same as telemetry
+
+    this.logger.info(`OpenClaw health check starting (interval: ${checkIntervalMs}ms)`);
+
+    const check = async () => {
+      let status: OpenClawStatus;
+      try {
+        status = await this.openclaw.healthCheck();
+      } catch {
+        status = "error";
+      }
+
+      if (status === "running") {
+        this.openclawFailures = 0;
+        return;
+      }
+
+      this.openclawFailures++;
+      this.logger.warn(`OpenClaw not healthy: ${status} (failure ${this.openclawFailures}/${AgentDaemon.MAX_OPENCLAW_FAILURES})`);
+
+      if (this.openclawFailures >= AgentDaemon.MAX_OPENCLAW_FAILURES) {
+        this.logger.error("OpenClaw max failures reached — attempting restart");
+        this.addLog("error", `OpenClaw unresponsive after ${this.openclawFailures} checks, restarting`);
+
+        const restarted = await this.openclaw.restart();
+        if (restarted) {
+          this.openclawFailures = 0;
+          this.addLog("lifecycle", "OpenClaw restarted successfully");
+        } else {
+          // Report error status to registry
+          await this.registry.updateStatus("error");
+          this.addLog("error", "OpenClaw restart failed — agent in error state");
+        }
+      }
+    };
+
+    // Check immediately
+    void check();
+    this.healthCheckTimer = setInterval(() => void check(), checkIntervalMs);
+  }
+
+  // -------------------------------------------------------------------------
+  // Log buffer helper
+  // -------------------------------------------------------------------------
+
+  private addLog(level: LogEntry["level"], message: string, taskId?: string): void {
+    this.logBuffer.push({
+      level,
+      source: this.config.agentName,
+      message,
+      agentId: this.config.agentId,
+      taskId: taskId ?? null,
+      component: "daemon",
+      metadata: null,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main — runs when executed as `node dist/index.js`
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const config = loadConfigFromEnv(process.env as Record<string, string | undefined>);
+  const daemon = new AgentDaemon(config);
+
+  // Graceful shutdown handlers
+  const shutdown = async (signal: string) => {
+    consoleLogger.info(`Received ${signal} — shutting down`);
+    await daemon.stop();
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+
+  // Uncaught error handlers
+  process.on("uncaughtException", (err) => {
+    consoleLogger.error("Uncaught exception", { error: err.message, stack: err.stack });
+    void daemon.stop().then(() => process.exit(1));
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    consoleLogger.error("Unhandled rejection", {
+      error: reason instanceof Error ? reason.message : String(reason),
+    });
+  });
+
+  await daemon.start();
+}
+
+// Only run main() if this is the entry point (not imported as a module)
+// Node.js ESM doesn't have require.main, so we check if there's no parent
+const isEntryPoint = process.argv[1]?.endsWith("index.js") ?? false;
+if (isEntryPoint) {
+  main().catch((err) => {
+    consoleLogger.error("Fatal error", { error: err instanceof Error ? err.message : String(err) });
+    process.exit(1);
+  });
+}
+
+// Re-export everything for library usage
+export { RegistryClient } from "./registry-client.js";
+export { OpenClawClient } from "./openclaw-client.js";
+export { TaskPoller } from "./task-poller.js";
+export { TelemetryCollector } from "./telemetry.js";
+export * from "./types.js";
