@@ -2,8 +2,23 @@
 
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { X, Loader2, Rocket, ChevronDown, CheckCircle, AlertCircle } from "lucide-react";
+import { X, Loader2, Rocket, ChevronDown, CheckCircle, AlertCircle, Dices } from "lucide-react";
 import { RoleIcon } from "./role-icon";
+
+const agentNames = [
+  "Atlas", "Nova", "Orion", "Cipher", "Vega", "Flux", "Echo", "Pixel",
+  "Helix", "Nexus", "Prism", "Quark", "Rune", "Spark", "Zenith", "Blaze",
+  "Cobalt", "Drift", "Ember", "Fable", "Glyph", "Haze", "Ivy", "Jinx",
+  "Kite", "Lumen", "Mako", "Nyx", "Onyx", "Pulse", "Quinn", "Raven",
+  "Sage", "Thorn", "Unity", "Volt", "Wren", "Xeno", "Yara", "Zephyr",
+  "Aegis", "Binary", "Crux", "Delta", "Ether", "Forge", "Ghost", "Hex",
+  "Ion", "Jade", "Knox", "Lyric", "Mist", "Nimbus", "Opal", "Pyre",
+  "Quill", "Rift", "Shard", "Trace", "Umbra", "Viper", "Wraith", "Axiom",
+];
+
+function generateRandomName(): string {
+  return agentNames[Math.floor(Math.random() * agentNames.length)];
+}
 
 interface Role {
   id: string;
@@ -44,7 +59,7 @@ const models = [
 type DeployState = "idle" | "deploying" | "success" | "error";
 
 export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: DeployAgentModalProps) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(generateRandomName);
   const [roleId, setRoleId] = useState("");
   const [teamId, setTeamId] = useState("");
   const [model, setModel] = useState("gpt-4o");
@@ -94,7 +109,7 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: De
       setDeployState("success");
       // Auto-close after success
       setTimeout(() => {
-        setName("");
+        setName(generateRandomName());
         setDeployState("idle");
         onClose();
       }, 1500);
@@ -150,15 +165,26 @@ export function DeployAgentModal({ isOpen, onClose, onDeploy, roles, teams }: De
           {/* Agent Name */}
           <div>
             <label className="block text-sm text-gray-400 mb-2">Agent Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Montgomery, Penelope..."
-              required
-              disabled={deployState === "deploying"}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 transition-colors disabled:opacity-50"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Atlas, Nova..."
+                required
+                disabled={deployState === "deploying"}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 transition-colors disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => setName(generateRandomName())}
+                disabled={deployState === "deploying"}
+                title="Generate random name"
+                className="px-3 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 hover:text-amber-400 hover:border-amber-500 transition-colors disabled:opacity-50"
+              >
+                <Dices className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Role */}
