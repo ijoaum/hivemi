@@ -15,7 +15,7 @@ import type {
 
 const OPENCLAW_HOME = "/home/openclaw";
 const OPENCLAW_WORKSPACE = `${OPENCLAW_HOME}/.openclaw/workspace`;
-const DAEMON_DIR = `${OPENCLAW_HOME}/agent-daemon`;
+const DAEMON_DIR = `${OPENCLAW_HOME}/.hivemi/daemon`;
 
 // ---------------------------------------------------------------------------
 // Sub-phase: Inject Secrets
