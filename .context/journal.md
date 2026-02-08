@@ -1,5 +1,19 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #47 (Refinement): Daemon Path Alignment
+
+### Summary
+Fixed daemon working directory paths to match the issue #47 spec (`/home/openclaw/.hivemi/daemon`). Both the systemd template in the daemon package and the bootstrapper's `DAEMON_DIR` constant were using `/home/openclaw/agent-daemon`. Updated for consistency.
+
+### Changes
+- `packages/agent-daemon/systemd/hivemi-agent.service` — WorkingDirectory + EnvironmentFile → `~/.hivemi/daemon`
+- `packages/bootstrapper/src/phases/configure.ts` — `DAEMON_DIR` → `/home/openclaw/.hivemi/daemon`
+
+### Commits
+- `77189a8` — fix(agent-daemon): align daemon paths to /home/openclaw/.hivemi/daemon per spec
+
+---
+
 ## 2026-02-09 — Issue #48: Registry — Telemetry & Deploy Status Endpoints
 
 ### Summary
