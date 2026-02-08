@@ -188,6 +188,19 @@ async function addIssueComment(number, body) {
   });
 }
 
+async function removeIssueLabel(number, label) {
+  const url = `https://api.github.com/repos/${CONFIG.githubRepo}/issues/${number}/labels/${encodeURIComponent(label)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `token ${CONFIG.githubToken}`,
+    },
+  });
+  if (res.ok) {
+    log("info", `Removed label "${label}" from issue #${number}`);
+  }
+}
+
 async function closeIssue(number) {
   const url = `https://api.github.com/repos/${CONFIG.githubRepo}/issues/${number}`;
   const res = await fetch(url, {
@@ -226,25 +239,36 @@ async function executeTask(prompt, issueNumber) {
       },
       body: JSON.stringify({
         model: CONFIG.model,
+        stream: true,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: controller.signal,
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OpenClaw API ${res.status}: ${text}`);
+      const errText = await res.text();
+      throw new Error(`OpenClaw API ${res.status}: ${errText}`);
     }
 
-    const data = await res.json();
-    const content =
-      data?.choices?.[0]?.message?.content || "(empty response)";
+    // Parse SSE stream to extract final content
+    const sseText = await res.text();
+    let content = "";
+    for (const line of sseText.split("\n")) {
+      if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+      try {
+        const chunk = JSON.parse(line.slice(6));
+        const delta = chunk?.choices?.[0]?.delta?.content;
+        if (delta) content += delta;
+      } catch {}
+    }
+
+    content = content || "(empty response)";
 
     return {
       success: true,
       content,
-      usage: data?.usage || {},
-      model: data?.model || CONFIG.model,
+      usage: {},
+      model: CONFIG.model,
     };
   } catch (e) {
     if (e.name === "AbortError") {
@@ -254,10 +278,30 @@ async function executeTask(prompt, issueNumber) {
         error: "timeout",
       };
     }
+    log("error", `Fetch error details: ${e.message}`, { cause: e.cause?.message || e.cause || null });
     return { success: false, content: e.message, error: "api_error" };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// ─── Context Loader ──────────────────────────────────────────────────────────
+
+function loadWorkspaceContext() {
+  const WORKSPACE = join(process.env.HOME || "/home/openclaw", ".openclaw/workspace");
+  const files = ["AGENTS.md", "SOUL.md", "TOOLS.md", "IDENTITY.md"];
+  const sections = [];
+
+  for (const file of files) {
+    try {
+      const content = readFileSync(join(WORKSPACE, file), "utf-8").trim();
+      if (content) {
+        sections.push(`### ${file}\n\n${content}`);
+      }
+    } catch {}
+  }
+
+  return sections.join("\n\n---\n\n");
 }
 
 // ─── Prompt Builder ──────────────────────────────────────────────────────────
@@ -269,6 +313,8 @@ function buildPrompt(issue, comments) {
     .map((c) => `**${c.user.login}** (${c.created_at}):\n${c.body}`)
     .join("\n\n---\n\n");
 
+  const workspaceContext = loadWorkspaceContext();
+
   return `# Task: Implement GitHub Issue #${issue.number}
 
 ## Title
@@ -279,6 +325,12 @@ ${issue.body || "(no description)"}
 
 ${commentContext ? `## Recent Comments\n${commentContext}` : ""}
 
+## Workspace Context (from the main agent)
+
+These files define who you are and how to behave. Follow them.
+
+${workspaceContext}
+
 ## Instructions
 
 You are implementing this issue for the HiveMI project.
@@ -286,6 +338,13 @@ You are implementing this issue for the HiveMI project.
 **Project location:** /home/openclaw/.openclaw/workspace/hivemi
 **Branch:** dev
 **Stack:** Next.js 16 dashboard, Hono APIs, Drizzle + Postgres, pnpm monorepo
+
+### ⚠️ CRITICAL: Don't Block on Long Commands!
+- **ALWAYS use \`timeout\` parameter** on exec calls for builds/installs (e.g. \`timeout: 120\`)
+- **NEVER poll in a loop** — if a command is running in background, check it 2-3 times max with delays, then move on or kill it
+- **Use \`yieldMs\`** for commands that might take a while — don't sit there polling every second
+- If a build takes too long, kill it and try a different approach
+- **Your session has a hard time limit** — wasting it on polling loops = failure
 
 ### Rules:
 1. Read the project structure and existing code before making changes
@@ -418,13 +477,16 @@ async function runIssue(issueNumber, dryRun = false) {
     return { skipped: true, reason: "dry-run" };
   }
 
-  // Label issue as in-progress
-  await updateIssueLabels(issueNumber, ["in-progress"]).catch(() => {});
+  // Label issue as working
+  await updateIssueLabels(issueNumber, ["working"]).catch(() => {});
 
   // Execute via Chat Completions API
   const startTime = Date.now();
   const result = await executeTask(prompt, issueNumber);
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  // Remove working label
+  await removeIssueLabel(issueNumber, "working").catch(() => {});
 
   log(
     result.success ? "info" : "error",

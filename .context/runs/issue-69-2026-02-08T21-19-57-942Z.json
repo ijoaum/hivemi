@@ -1,0 +1,8 @@
+{
+  "issue": 69,
+  "timestamp": "2026-02-08T21:19:57.942Z",
+  "success": false,
+  "contentLength": 12,
+  "contentHead": "fetch failed",
+  "error": "api_error"
+}
