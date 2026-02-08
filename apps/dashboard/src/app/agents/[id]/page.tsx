@@ -18,19 +18,23 @@ import {
 } from "lucide-react";
 
 const statusColors: Record<string, string> = {
-  online: "bg-green-500",
+  provisioning: "bg-blue-500 animate-pulse",
   idle: "bg-green-500",
   working: "bg-amber-500 animate-pulse",
   offline: "bg-gray-500",
+  unreachable: "bg-yellow-500",
   error: "bg-red-500",
+  destroyed: "bg-gray-700",
 };
 
 const statusLabels: Record<string, string> = {
-  online: "Online",
+  provisioning: "Provisioning",
   idle: "Idle",
   working: "Working",
   offline: "Offline",
+  unreachable: "Unreachable",
   error: "Error",
+  destroyed: "Destroyed",
 };
 
 export default function AgentDetailPage() {
@@ -67,7 +71,7 @@ export default function AgentDetailPage() {
   const agentTasks = useMemo(() => allTasks?.filter(t => t.agentId === agentId) || [], [allTasks, agentId]);
   const agentLogs = useMemo(() => allLogs?.filter(l => l.agentId === agentId) || [], [allLogs, agentId]);
 
-  const isOnline = agent && agent.status !== "offline";
+  const isOnline = agent && (agent.status === "idle" || agent.status === "working");
 
   const handleStart = async () => {
     setActionLoading(true);
@@ -247,9 +251,9 @@ export default function AgentDetailPage() {
             </div>
             <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 md:p-4">
               <div className="text-xl md:text-2xl font-bold text-amber-400">
-                {agentTasks.filter(t => t.status === "running").length}
+                {agentTasks.filter(t => t.status === "locked").length}
               </div>
-              <div className="text-xs md:text-sm text-gray-500">Running</div>
+              <div className="text-xs md:text-sm text-gray-500">Active</div>
             </div>
           </div>
 
@@ -270,7 +274,7 @@ export default function AgentDetailPage() {
                       "text-xs px-2 py-1 rounded-full capitalize",
                       task.status === "completed" ? "bg-green-500/20 text-green-400" :
                       task.status === "failed" ? "bg-red-500/20 text-red-400" :
-                      task.status === "running" ? "bg-amber-500/20 text-amber-400" :
+                      task.status === "locked" ? "bg-amber-500/20 text-amber-400" :
                       "bg-gray-500/20 text-gray-400"
                     )}>
                       {task.status}

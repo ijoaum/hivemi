@@ -104,6 +104,7 @@ const seedAgents = [
   { name: "Frank", roleSlug: "sre", teamName: "Infrastructure", model: "claude-sonnet-4", status: "offline" as const },
   { name: "Grace", roleSlug: "designer", teamName: "Product", model: "gpt-4o", status: "working" as const },
   { name: "Hank", roleSlug: "analyst", teamName: "Infrastructure", model: "gpt-4o", status: "idle" as const },
+  // Note: "online" was removed from agent_status; use "idle" for online agents
 ];
 
 // Tasks to seed (reference agent names and team names)
@@ -163,7 +164,7 @@ const seedTasks = [
   {
     title: "Build settings page components",
     description: "Implement React components for the settings page: forms, toggles, and sections",
-    status: "running" as const,
+    status: "locked" as const,
     priority: "high" as const,
     agentName: "Carol",
     teamName: "Core Platform",
@@ -173,7 +174,7 @@ const seedTasks = [
   {
     title: "Architect microservice split",
     description: "Design the architecture for splitting the monolith into registry and manager services",
-    status: "running" as const,
+    status: "locked" as const,
     priority: "high" as const,
     agentName: "Bob",
     teamName: "Core Platform",
@@ -183,7 +184,7 @@ const seedTasks = [
   {
     title: "Design onboarding flow",
     description: "Create wireframes and prototypes for new user onboarding experience",
-    status: "running" as const,
+    status: "locked" as const,
     priority: "medium" as const,
     agentName: "Grace",
     teamName: "Product",
@@ -387,7 +388,7 @@ async function seed() {
       completedAt,
     }).returning();
     taskMap.set(task.title, result[0].id);
-    const statusIcon = task.status === "completed" ? "✅" : task.status === "running" ? "🔄" : task.status === "failed" ? "❌" : "⏳";
+    const statusIcon = task.status === "completed" ? "✅" : task.status === "locked" ? "🔄" : task.status === "failed" ? "❌" : "⏳";
     console.log(`   ${statusIcon} ${task.title} [${task.status}]`);
   }
   console.log(`   → ${taskMap.size} tasks created.\n`);
@@ -403,7 +404,7 @@ async function seed() {
     await db.insert(logs).values({
       agentId,
       source: log.agentName.toLowerCase(),
-      level: log.level,
+      level: log.level as "debug" | "info" | "warn" | "error" | "lifecycle",
       message: log.message,
       timestamp: new Date(now - (seedLogs.length - i) * 60000), // 1 min apart
     });

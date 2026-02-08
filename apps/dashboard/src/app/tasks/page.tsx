@@ -31,7 +31,7 @@ export default function TasksPage() {
       teamId: t.teamId,
       teamName: apiTeams?.find(team => team.id === t.teamId)?.name || "Unknown",
       teamEmoji: apiTeams?.find(team => team.id === t.teamId)?.emoji || "hexagon",
-      progress: t.status === "running" ? 50 : t.status === "completed" ? 100 : 0,
+      progress: t.status === "locked" ? 50 : t.status === "completed" ? 100 : 0,
       createdAt: t.createdAt,
       startedAt: t.startedAt || undefined,
       completedAt: t.completedAt || undefined,
@@ -56,7 +56,7 @@ export default function TasksPage() {
   // Group by status for counts
   const statusCounts = useMemo(() => ({
     queued: tasks.filter((t) => t.status === "queued").length,
-    running: tasks.filter((t) => t.status === "running").length,
+    running: tasks.filter((t) => t.status === "locked").length,
     completed: tasks.filter((t) => t.status === "completed").length,
     failed: tasks.filter((t) => t.status === "failed").length,
   }), [tasks]);

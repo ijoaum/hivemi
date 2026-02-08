@@ -70,7 +70,7 @@ export class RegistryClient {
 
   async updateTaskStatus(taskId: string, status: string, output?: string, error?: string): Promise<ApiResponse<Task>> {
     const body: Record<string, unknown> = { status };
-    if (status === "running") body.startedAt = new Date();
+    if (status === "locked") body.startedAt = new Date();
     if (status === "completed" || status === "failed") body.completedAt = new Date();
     if (output) body.output = output;
     if (error) body.error = error;

@@ -55,7 +55,7 @@ app.post("/api/demands", async (c) => {
     
     if (agent) {
       // Assign task to agent
-      await registryClient.updateTaskStatus(task.id, "running");
+      await registryClient.updateTaskStatus(task.id, "locked");
       await registryClient.updateAgentStatus(agent.id, "working", task.id);
       
       logger.info({ taskId: task.id, agentId: agent.id, agentName: agent.name }, "Task assigned to agent");
@@ -66,7 +66,7 @@ app.post("/api/demands", async (c) => {
       return c.json({ 
         success: true, 
         data: { 
-          task: { ...task, status: "running" }, 
+          task: { ...task, status: "locked" }, 
           assignedTo: { id: agent.id, name: agent.name } 
         } 
       }, 201);

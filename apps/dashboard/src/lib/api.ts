@@ -31,7 +31,7 @@ export interface Agent {
   name: string;
   roleId: string;
   teamId: string;
-  status: "online" | "offline" | "working" | "idle" | "error";
+  status: "provisioning" | "idle" | "working" | "offline" | "unreachable" | "error" | "destroyed";
   model: string;
   host: string;
   port: number;
@@ -134,7 +134,7 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: "queued" | "locked" | "completed" | "failed" | "cancelling" | "cancelled";
   priority: "high" | "medium" | "low";
   agentId: string | null;
   teamId: string;
@@ -177,7 +177,7 @@ export const tasksApi = {
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: "debug" | "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error" | "lifecycle";
   source: string;
   agentId: string | null;
   taskId: string | null;

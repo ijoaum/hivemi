@@ -107,7 +107,7 @@ export default function Home() {
   // Calculate stats from agents
   const stats = useMemo(() => ({
     total: agents.length,
-    online: agents.filter(a => a.status !== "offline").length,
+    online: agents.filter(a => a.status === "idle" || a.status === "working").length,
     working: agents.filter(a => a.status === "working").length,
     idle: agents.filter(a => a.status === "idle").length,
     error: agents.filter(a => a.status === "error").length,

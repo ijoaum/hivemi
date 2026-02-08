@@ -1,4 +1,4 @@
-export type TaskStatus = "queued" | "running" | "completed" | "failed";
+export type TaskStatus = "queued" | "locked" | "completed" | "failed" | "cancelling" | "cancelled";
 export type TaskPriority = "high" | "medium" | "low";
 
 export interface Task {

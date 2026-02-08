@@ -74,7 +74,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       </div>
 
       {/* Progress bar for running tasks */}
-      {task.status === "running" && task.estimatedMs && (
+      {task.status === "locked" && task.estimatedMs && (
         <div className="mb-3">
           <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
             <div
