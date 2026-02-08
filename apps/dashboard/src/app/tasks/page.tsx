@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { AppLayout } from "@/components/app-layout";
 import { TaskCard } from "@/components/task-card";
 import { TaskFilters } from "@/components/task-filters";
 import { useApi } from "@/hooks/use-api";
@@ -81,7 +80,7 @@ export default function TasksPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Tasks</h1>
@@ -135,6 +134,6 @@ export default function TasksPage() {
           No tasks match the current filters
         </div>
       )}
-    </AppLayout>
+    </>
   );
 }

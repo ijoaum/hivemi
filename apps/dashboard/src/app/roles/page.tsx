@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { AppLayout } from "@/components/app-layout";
 import { RoleCard } from "@/components/role-card";
 import { RoleModal, type RoleFormData } from "@/components/role-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -84,7 +83,7 @@ export default function RolesPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
@@ -158,6 +157,6 @@ export default function RolesPage() {
         confirmLabel="Delete"
         isDestructive
       />
-    </AppLayout>
+    </>
   );
 }

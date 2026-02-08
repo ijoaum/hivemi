@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AppLayout } from "@/components/app-layout";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleIcon } from "@/components/role-icon";
 import { useApi } from "@/hooks/use-api";
@@ -118,18 +117,15 @@ export default function AgentDetailPage() {
 
   if (isLoading) {
     return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-400">Loading...</div>
-        </div>
-      </AppLayout>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-400">Loading...</div>
+      </div>
     );
   }
 
   if (agentError || !agent) {
     return (
-      <AppLayout>
-        <div className="text-center py-12">
+      <div className="text-center py-12">
           <p className="text-red-400 mb-4">Agent not found</p>
           <button
             onClick={() => router.push("/")}
@@ -138,12 +134,12 @@ export default function AgentDetailPage() {
             Back to Dashboard
           </button>
         </div>
-      </AppLayout>
+      </div>
     );
   }
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
         <div className="flex items-center gap-3 md:gap-4">
@@ -403,6 +399,6 @@ export default function AgentDetailPage() {
         confirmLabel="Delete"
         isDestructive
       />
-    </AppLayout>
+    </>
   );
 }

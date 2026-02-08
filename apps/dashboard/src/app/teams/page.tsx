@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { AppLayout } from "@/components/app-layout";
 import { TeamCard } from "@/components/team-card";
 import { TeamModal, type TeamFormData } from "@/components/team-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -72,7 +71,7 @@ export default function TeamsPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
@@ -147,6 +146,6 @@ export default function TeamsPage() {
         confirmLabel="Delete"
         isDestructive
       />
-    </AppLayout>
+    </>
   );
 }

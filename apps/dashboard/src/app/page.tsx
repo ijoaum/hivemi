@@ -3,7 +3,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
-import { AppLayout } from "@/components/app-layout";
 import { DeployAgentModal } from "@/components/deploy-agent-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
@@ -165,7 +164,7 @@ export default function Home() {
   };
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
@@ -347,6 +346,6 @@ export default function Home() {
         confirmLabel="Delete"
         isDestructive
       />
-    </AppLayout>
+    </>
   );
 }

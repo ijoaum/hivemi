@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { AppLayout } from "@/components/app-layout";
 import { cn } from "@/lib/utils";
 import { 
   Settings, 
@@ -32,7 +31,7 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState("general");
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Settings</h1>
@@ -72,7 +71,7 @@ export default function SettingsPage() {
           {activeSection === "danger" && <DangerZone />}
         </div>
       </div>
-    </AppLayout>
+    </>
   );
 }
 
