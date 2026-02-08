@@ -1,5 +1,83 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #47: Agent Daemon — Resident VM Process
+
+### Summary
+Implemented `packages/agent-daemon` — the resident process that runs on each agent VM. Polls the registry task queue, executes tasks via OpenClaw Chat Completions API, reports results, and maintains heartbeat/telemetry loops.
+
+### Done
+- **types.ts:** Full type system — `DaemonConfig` (loaded from `.env`), `DaemonTask`, `TaskResult`, `TelemetrySnapshot`, `LogEntry`, plus `IRegistryClient` and `IOpenClawClient` interfaces for testability
+- **registry-client.ts:** HTTP client for all Registry API interactions:
+  - `register()` — upsert via PUT (then POST on 404)
+  - `heartbeat()` — POST /api/agents/:id/heartbeat
+  - `updateStatus()` — PUT /api/agents/:id with status
+  - `pollTask()` — GET /api/tasks/next with role filter, fallback to GET /api/tasks?status=queued + client-side lock
+  - `reportTaskResult()` — PUT /api/tasks/:id with output/error/artifacts
+  - `sendTelemetry()` — POST /api/agents/:id/telemetry (fallback to PUT)
+  - `sendLogs()` — POST /api/logs (batch)
+  - `setOffline()` — graceful shutdown status update
+- **openclaw-client.ts:** Local OpenClaw gateway integration:
+  - `healthCheck()` — GET /v1/models to verify gateway is running
+  - `executeTask()` — POST /v1/chat/completions with task prompt (one request = one session = clean context)
+  - `restart()` — exec `openclaw gateway restart` + wait + verify
+- **task-poller.ts:** Pull-model task execution:
+  - Polls registry every 15s (configurable)
+  - Lock-free single-task execution (skips poll while executing)
+  - Builds structured prompts from task title/description/input
+  - Reports success/failure to registry
+  - Tracks completed/failed counters + active task
+  - Adds log entries to shared buffer
+- **telemetry.ts:** OS metrics via native Node.js modules:
+  - CPU usage from os.cpus()
+  - Memory used/total from os.totalmem/freemem
+  - Disk usage via `df -B1`
+  - Load average from os.loadavg()
+  - LLM request/token/error counters
+  - Daemon uptime and OpenClaw status
+- **index.ts:** `AgentDaemon` orchestrator class:
+  - Starts all loops: heartbeat (30s), telemetry (60s), task poll (15s), log shipping (5min), health check
+  - OpenClaw health monitoring: 3 consecutive failures triggers auto-restart; reports error status if restart fails
+  - Log buffer with backpressure (1000 entry cap, retry on ship failure)
+  - Graceful shutdown on SIGTERM/SIGINT: stops loops, ships remaining logs, sets offline in registry
+  - Entry point: loads config from process.env, sets up signal handlers
+- **systemd/hivemi-agent.service:** Production systemd unit with security hardening (NoNewPrivileges, ProtectSystem)
+- **25 unit tests** — all passing, covering config parsing, task execution, telemetry, registry client, daemon lifecycle
+
+### Key Decisions
+- **Chat Completions API** (not WebSocket/sessions) — one HTTP POST per task = guaranteed clean context. The daemon is stateless between tasks.
+- **Pull model** with fallback — tries `GET /api/tasks/next?role=` first (optimized server-side locking), falls back to listing + client-side lock if endpoint doesn't exist yet (backward compatible).
+- **Interface-based design** — `IRegistryClient` and `IOpenClawClient` allow full mocking in tests without HTTP calls. Same pattern as bootstrapper's `ISSHClient`.
+- **Self-healing OpenClaw** — daemon monitors gateway health and auto-restarts after 3 consecutive failures. If restart fails, reports error status to registry so the Deploy Orchestrator knows.
+- **Log buffer with cap** — logs buffer in memory and ship every 5 min. If ship fails, entries go back to buffer front. Buffer capped at 1000 entries to prevent memory leaks.
+- **All intervals configurable** via env vars (POLL_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, etc.) with sensible defaults.
+
+### Structure
+```
+packages/agent-daemon/
+  src/
+    index.ts              — AgentDaemon class + entry point
+    registry-client.ts    — HTTP client for Registry API
+    task-poller.ts        — poll loop + task execution
+    openclaw-client.ts    — Chat Completions API integration
+    telemetry.ts          — OS metrics collection
+    types.ts              — all type definitions + config loader
+    __tests__/
+      agent-daemon.test.ts — 25 unit tests
+  systemd/
+    hivemi-agent.service  — systemd unit file
+```
+
+### Commits
+- `e726a5b` — feat(agent-daemon): implement resident VM process for task execution
+
+### Next
+- #48 (Registry: telemetry endpoint) — the `/api/agents/:id/telemetry` endpoint the daemon posts to
+- #55 (Protocol: task queue) — server-side `GET /api/tasks/next` with `SELECT FOR UPDATE SKIP LOCKED`
+- #64 (Daemon ↔ OpenClaw integration) — deeper integration, tool results, streaming
+- #49 (Deploy Orchestrator) — orchestrates provisioner + bootstrapper + daemon lifecycle
+
+---
+
 ## 2026-02-09 — Issue #46: Agent Config — System Prompts & Config by Role
 
 ### Summary
