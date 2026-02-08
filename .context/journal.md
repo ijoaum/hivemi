@@ -1,5 +1,51 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #71: Settings — Cloud Config Backend
+
+### Summary
+Implemented the backend for cloud provider configuration. All settings are persisted in the `settings` table (key-value with JSONB). Secrets are encrypted at rest with AES-256-GCM.
+
+### Done
+- **Protocol schemas:** `UpdateCloudConfigSchema`, `CloudConfigResponseSchema`, `CloudTestResultSchema`, `CloudRegionSchema` added to `@hivemi/protocol`
+- **Encryption:** `apps/registry/src/lib/crypto.ts` — AES-256-GCM encrypt/decrypt using key derived from `SETTINGS_ENCRYPTION_KEY` env var (falls back to `DATABASE_URL`)
+- **5 endpoints** in `apps/registry/src/routes/cloud-settings.ts`:
+  - `GET /api/settings/cloud` — returns config with redacted secrets (`hasApiToken`, `hasSSHKey` booleans)
+  - `PUT /api/settings/cloud` — Zod-validated update, merges with existing, encrypts secrets
+  - `POST /api/settings/cloud/test` — tests DO connection via `GET /v2/account`
+  - `GET /api/settings/cloud/regions` — fetches available regions from DO API (static fallback if no token)
+  - `POST /api/settings/cloud/ssh-key/generate` — generates ed25519 keypair, stores private encrypted, returns public in OpenSSH format
+- **Cloud config service:** `apps/registry/src/lib/cloud-config.ts` — `getCloudConfig()` returns full config with decrypted secrets for Provisioner/Bootstrapper; `updateSSHKeyId()` for post-registration
+- **Dashboard proxy routes:** 4 Next.js API routes proxy to registry
+
+### Key Decisions
+- **Two settings rows:** `cloud_config` (public: provider, region, size, sshKeyId, sshPublicKey) and `cloud_secrets` (encrypted: apiToken, sshPrivateKey). This separates redactable data from secrets.
+- **No sshpk dependency:** OpenSSH format conversion for ed25519 done natively using Node.js crypto DER export + manual SSH wire format encoding.
+- **Encryption key:** Derived via scrypt from env var or DATABASE_URL fallback. Not ideal for production but works zero-config in dev.
+- **GCP:** Test and regions endpoints return graceful "not implemented" responses — pluggable when GCP support lands.
+- **Pre-existing bug:** `apps/dashboard/src/app/agents/[id]/page.tsx` has a parse error (unterminated regex). Unrelated to this issue.
+
+### Settings Table Layout
+| key | value (JSONB) |
+|-----|---------------|
+| `cloud_config` | `{ provider, region, instanceSize, sshKeyId, sshPublicKey }` |
+| `cloud_secrets` | `{ apiToken: "<encrypted>", sshPrivateKey: "<encrypted>" }` |
+
+### Files Changed
+- `packages/protocol/src/types.ts` — +4 schemas
+- `apps/registry/src/lib/crypto.ts` — NEW (encryption)
+- `apps/registry/src/lib/cloud-config.ts` — NEW (internal service)
+- `apps/registry/src/routes/cloud-settings.ts` — NEW (5 endpoints)
+- `apps/registry/src/routes.ts` — mount cloud settings routes
+- `apps/dashboard/src/app/api/settings/cloud/` — 4 proxy routes
+
+### Commits
+- `aee897b` — feat(settings): cloud config backend
+- `f2cc7f7` — feat(settings): cloud config service for internal consumers
+
+### Next: #44 (Provisioner) can now call `getCloudConfig()` to get provider token and SSH keys
+
+---
+
 ## 2026-02-09 — Issue #69: Database Migrations for Deploy System
 
 ### Summary
