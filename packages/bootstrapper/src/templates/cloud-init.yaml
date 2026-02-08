@@ -1,0 +1,42 @@
+#cloud-config
+# =============================================================================
+# HiveMI Cloud-Init Template
+# Phase 1: Generic VM setup — identical for every agent
+# =============================================================================
+
+# Create the openclaw user
+users:
+  - name: openclaw
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: [sudo]
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+# Update and install base packages
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - jq
+  - git
+  - htop
+  - unzip
+
+# Configure swap for small VMs
+${SWAP_SECTION}
+
+# Run setup commands
+runcmd:
+  # Install OpenClaw
+  - |
+    su - openclaw -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --non-interactive' || true
+  # Ensure ~/.local/bin and linuxbrew are in PATH for openclaw user
+  - |
+    echo 'export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"' >> /home/openclaw/.bashrc
+  # Write completion flag
+  - touch /tmp/hivemi-cloud-init-done
+  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done
+
+final_message: "HiveMI cloud-init complete after $UPTIME seconds"
