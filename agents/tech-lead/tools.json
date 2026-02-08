@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "file-read",
+      "description": "Read project files for architecture review",
+      "enabled": true
+    },
+    {
+      "name": "create-subtask",
+      "description": "Create implementation tasks for developers",
+      "enabled": true
+    },
+    {
+      "name": "query-tasks",
+      "description": "Query tasks for dependency and context analysis",
+      "enabled": true
+    },
+    {
+      "name": "notify-agent",
+      "description": "Send technical guidance to other agents",
+      "enabled": true
+    }
+  ]
+}

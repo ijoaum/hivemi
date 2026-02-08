@@ -1,0 +1,19 @@
+{
+  "tools": [
+    {
+      "name": "create-subtask",
+      "description": "Create a subtask in the registry and assign it to a role",
+      "enabled": true
+    },
+    {
+      "name": "query-tasks",
+      "description": "Query existing tasks for dependency analysis",
+      "enabled": true
+    },
+    {
+      "name": "notify-agent",
+      "description": "Send a message to another agent for coordination",
+      "enabled": true
+    }
+  ]
+}

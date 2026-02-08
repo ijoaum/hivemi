@@ -1,0 +1,8 @@
+{
+  "heartbeatInterval": 30000,
+  "telemetryInterval": 60000,
+  "logBatchInterval": 300000,
+  "logLevel": "info",
+  "taskTimeout": 600000,
+  "maxRetries": 3
+}
