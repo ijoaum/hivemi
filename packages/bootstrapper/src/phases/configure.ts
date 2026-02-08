@@ -135,6 +135,11 @@ export async function copyRoleConfig(
     logger?.debug("Wrote config.json");
   }
 
+  if (role.toolsJson) {
+    await ssh.writeFile(`${OPENCLAW_WORKSPACE}/tools.json`, role.toolsJson);
+    logger?.debug("Wrote tools.json");
+  }
+
   logger?.info("Role configuration files copied");
 }
 

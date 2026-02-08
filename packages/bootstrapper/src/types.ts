@@ -71,8 +71,10 @@ export interface RoleConfig {
   agentsMd: string;
   /** TOOLS.md — enabled tools */
   toolsMd: string;
-  /** config.json — operational parameters (JSON string) */
+  /** config.json — merged operational parameters (JSON string) */
   configJson: string;
+  /** tools.json — role-specific tool definitions (JSON string, optional) */
+  toolsJson?: string;
 }
 
 export interface BootstrapConfig {
