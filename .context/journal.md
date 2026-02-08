@@ -1,5 +1,41 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #69: Database Migrations for Deploy System
+
+### Summary
+Implemented all database schema changes for the deploy system. Updated Drizzle schema, protocol types, and all codebase references to match new enum values.
+
+### Done
+- **3 enums altered:** `agent_status` (+provisioning, +unreachable, +destroyed, -online), `task_status` (+locked, +cancelling, -running), `log_level` (+lifecycle)
+- **3 new enums:** `deploy_status`, `instance_size`, `cloud_provider`
+- **4 new tables:** `deploys` (deploy tracking with phases), `agent_telemetry` (infra/LLM/task metrics), `settings` (global key-value config), `task_progress` (schema ready, Phase 2)
+- **6 new columns on agents:** `version`, `openclaw_version`, `cloud` (JSONB), `capabilities_list` (JSONB), `private_ip`, `deploy_id`
+- **5 new columns on tasks:** `role_target`, `locked_by`, `locked_at`, `parent_task_id`, `artifacts` (JSONB)
+- **1 new column on logs:** `component`
+- **8 new indexes** + ensured 4 existing indexes
+- **Type exports:** `Deploy`, `NewDeploy`, `AgentTelemetryRecord`, `Setting`, `TaskProgressRecord`
+- **Protocol types updated:** all Zod schemas match new DB schema
+- **Codebase updated:** dashboard, manager, CLI, seed all use new enum values
+
+### Key Decisions
+- `deploys.agentId` does NOT have a Drizzle FK reference to avoid circular dependency with `agents.deployId` → `deploys.id`. The SQL migration has the proper FK constraint.
+- `agents.capabilities_list` column name avoids conflict with `roles.capabilities` in JOINs
+- Old enum values (`online`, `running`) kept in PostgreSQL type (can't remove from PG enum directly) but migrated in data via UPDATE statements
+- All new columns are nullable for backward compatibility
+- `task_progress` table schema is ready but implementation deferred to Phase 2 (#68)
+
+### Migration File
+`apps/registry/drizzle/0001_deploy_system.sql` — idempotent (IF NOT EXISTS / IF NOT EXISTS throughout), safe to run on existing DB
+
+### Commits
+- `5592f83` — feat(db): deploy system schema
+- `aa87973` — feat(protocol): update types for deploy system
+- `e45a0c8` — refactor: update codebase for new enum values
+
+### Next: #44 (Provisioner) — requires this migration to be run first
+
+---
+
 ## 2026-02-08 — Day 2: Deploy Architecture & Issues
 
 ### Summary
