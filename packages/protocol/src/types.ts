@@ -283,6 +283,31 @@ export const AgentTelemetrySchema = z.object({
 });
 export type AgentTelemetry = z.infer<typeof AgentTelemetrySchema>;
 
+/**
+ * Schema for POST /api/agents/:id/telemetry — daemon submits metrics.
+ * All metric groups are optional (daemon may send partial reports).
+ */
+export const SubmitTelemetrySchema = z.object({
+  infra: TelemetryInfraSchema.optional(),
+  llm: TelemetryLlmSchema.optional(),
+  tasks: TelemetryTasksSchema.optional(),
+  daemon: TelemetryDaemonSchema.optional(),
+});
+export type SubmitTelemetry = z.infer<typeof SubmitTelemetrySchema>;
+
+/**
+ * Schema for PUT /api/deploys/:id — update deploy phase/status.
+ */
+export const UpdateDeploySchema = z.object({
+  status: DeployStatusSchema.optional(),
+  instanceId: z.string().max(255).optional(),
+  agentId: z.string().uuid().optional(),
+  error: z.string().optional(),
+  phase: DeployPhaseSchema.optional(),
+  completedAt: z.coerce.date().optional(),
+});
+export type UpdateDeploy = z.infer<typeof UpdateDeploySchema>;
+
 // =============================================================================
 // SETTINGS
 // =============================================================================

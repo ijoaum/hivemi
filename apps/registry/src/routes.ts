@@ -10,6 +10,8 @@ import {
   CreateTaskSchema 
 } from "@hivemi/protocol";
 import cloudSettings from "./routes/cloud-settings.js";
+import telemetryRoutes from "./routes/telemetry.js";
+import deployRoutes from "./routes/deploys.js";
 
 const app = new Hono();
 
@@ -431,5 +433,18 @@ app.post("/api/logs", async (c) => {
 // =============================================================================
 
 app.route("/api/settings/cloud", cloudSettings);
+
+// =============================================================================
+// TELEMETRY
+// =============================================================================
+
+app.route("/api/agents", telemetryRoutes);
+app.route("/api/telemetry", telemetryRoutes);
+
+// =============================================================================
+// DEPLOYS
+// =============================================================================
+
+app.route("/api/deploys", deployRoutes);
 
 export default app;
