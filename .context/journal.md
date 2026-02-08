@@ -1,5 +1,63 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #45: Bootstrapper — VM Configuration Package
+
+### Summary
+Implemented `packages/bootstrapper` — transforms a provisioned VM into a functional HiveMI agent with OpenClaw, secrets, role config, and the Agent Daemon as a systemd service.
+
+### Done
+- **types.ts:** Full type system — `BootstrapConfig`, `ISecretProvider`, `ISSHClient`, `BootstrapPhase` tracking, configurable timeouts with defaults
+- **ssh-client.ts:** SSH wrapper using system `ssh` binary (no native deps needed), supports exec, writeFile (base64-encoded for safety), fileExists, connect/disconnect with temp key management
+- **phases/cloud-init.ts:** `generateCloudInit()` produces cloud-init YAML (user creation, swap config, package install, OpenClaw install, completion flag); `waitCloudInit()` polls for flag file
+- **phases/configure.ts:** Four sub-phases orchestrated with callbacks:
+  1. `injectSecrets()` — resolves secrets via provider, returns envVar→value map
+  2. `configureOpenClaw()` — writes SOUL.md, OpenClaw config (model, Chat Completions API, sandbox off)
+  3. `copyRoleConfig()` — writes SOUL.md, AGENTS.md, TOOLS.md, config.json to workspace
+  4. `installDaemon()` — writes .env (mode 600), systemd unit file, daemon-reload/enable/start
+- **phases/wait-registration.ts:** Polls `GET /api/agents/:id` until agent transitions out of "provisioning" and has a heartbeat; fetches journalctl logs on timeout for diagnostics
+- **secrets/onepassword.ts:** `OnePasswordProvider` using `op read` CLI with service account token
+- **secrets/envfile.ts:** `EnvFileProvider` as fallback — loads from Map or .env file
+- **index.ts:** `bootstrap()` orchestrator — runs all phases in sequence with per-phase status tracking, error capture, and cleanup
+- **20 unit tests** — all passing with mock SSH client and EnvFileProvider
+
+### Key Decisions
+- **System SSH binary** instead of a Node.js SSH library (like ssh2). The system `ssh` handles key formats, agent forwarding, etc. natively — one less native dep to compile on the VM. Trade-off: requires `ssh` on the machine running the bootstrapper (always present on Linux).
+- **Base64 encoding for file writes** via SSH heredoc to avoid shell escaping issues with special characters in configs.
+- **Phase callbacks** in `configure()` allow the caller (Deploy Orchestrator) to update deploy status in real-time as each sub-phase progresses.
+- **Idempotency**: cloud-init runs only on first boot (cloud provider guarantees), SSH config overwrites existing files, daemon systemd unit gets daemon-reload+restart.
+- **`ISSHClient` interface** allows full mocking in tests without real SSH connections.
+- **No `@hivemi/protocol` runtime dependency** — types are defined locally to avoid coupling with the registry's Drizzle types. The protocol package is a workspace dep for potential future use.
+
+### Structure
+```
+packages/bootstrapper/
+  src/
+    index.ts              — bootstrap() orchestrator + exports
+    types.ts              — all type definitions
+    ssh-client.ts         — SSH via system binary
+    phases/
+      cloud-init.ts       — cloud-init generation + wait
+      configure.ts        — secrets, openclaw, role, daemon
+      wait-registration.ts — registry polling
+    secrets/
+      onepassword.ts      — 1Password provider
+      envfile.ts          — .env file fallback
+    templates/
+      cloud-init.yaml     — reference template
+    __tests__/
+      bootstrapper.test.ts — 20 unit tests
+```
+
+### Commits
+- `8932862` — feat(bootstrapper): implement VM bootstrap package
+
+### Next
+- #46 (Config Management) — OpenClaw config generation in more detail
+- #47 (Agent Daemon) — the daemon that `installDaemon()` installs
+- #49 (Deploy Orchestrator) — calls `bootstrap()` and manages deploy lifecycle
+
+---
+
 ## 2026-02-09 — Issue #71: Settings — Cloud Config Backend
 
 ### Summary
