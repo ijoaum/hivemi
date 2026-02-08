@@ -14,6 +14,7 @@ import heartbeatRoutes from "./routes/heartbeat.js";
 import cloudSettings from "./routes/cloud-settings.js";
 import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
+import taskQueueRoutes from "./routes/tasks.js";
 
 const app = new Hono();
 
@@ -263,7 +264,15 @@ app.delete("/api/agents/:id", async (c) => {
 });
 
 // =============================================================================
-// TASKS
+// TASKS — Queue endpoints (Issue #55)
+// =============================================================================
+
+// Mount task queue routes FIRST — /api/tasks/next, /api/tasks/:id/complete, /api/tasks/:id/subtasks
+// These use SELECT FOR UPDATE SKIP LOCKED for atomic task claiming
+app.route("/api/tasks", taskQueueRoutes);
+
+// =============================================================================
+// TASKS — CRUD (existing)
 // =============================================================================
 
 app.get("/api/tasks", async (c) => {
@@ -345,7 +354,16 @@ app.post("/api/tasks/:id/retry", async (c) => {
   try {
     const id = c.req.param("id");
     const result = await db.update(tasks)
-      .set({ status: "queued", error: null, startedAt: null, completedAt: null })
+      .set({
+        status: "queued",
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        // Clear lock fields on retry — task goes back to queue
+        lockedBy: null,
+        lockedAt: null,
+        agentId: null,
+      })
       .where(eq(tasks.id, id))
       .returning();
     if (result.length === 0) {
@@ -363,7 +381,13 @@ app.post("/api/tasks/:id/cancel", async (c) => {
   try {
     const id = c.req.param("id");
     const result = await db.update(tasks)
-      .set({ status: "cancelled", completedAt: new Date() })
+      .set({
+        status: "cancelled",
+        completedAt: new Date(),
+        // Clear lock fields on cancel
+        lockedBy: null,
+        lockedAt: null,
+      })
       .where(eq(tasks.id, id))
       .returning();
     if (result.length === 0) {

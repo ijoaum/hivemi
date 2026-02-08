@@ -223,34 +223,65 @@ export class RegistryClient implements IRegistryClient {
   }
 
   // -------------------------------------------------------------------------
-  // Report task result — PUT /api/tasks/:id
+  // Report task result — PUT /api/tasks/:id/complete
+  // Uses the new structured completion endpoint from Issue #55.
+  // Falls back to PUT /api/tasks/:id if the complete endpoint is not available.
   // -------------------------------------------------------------------------
 
   async reportTaskResult(taskId: string, result: TaskResult): Promise<void> {
-    const body: Record<string, unknown> = {
+    // Try the structured completion endpoint first (Issue #55)
+    const completeBody: Record<string, unknown> = {
       status: result.status,
       output: result.output,
-      elapsedMs: result.elapsedMs,
-      completedAt: new Date().toISOString(),
-      agentId: this.agentId,
+      duration: result.elapsedMs,
     };
 
     if (result.error) {
-      body.error = result.error;
+      completeBody.error = result.error;
     }
 
     if (result.artifacts.length > 0) {
-      body.artifacts = result.artifacts;
+      completeBody.artifacts = result.artifacts;
     }
 
-    const res = await this.request("PUT", `/api/tasks/${taskId}`, body);
-    if (!res.ok) {
-      const text = await res.text();
-      this.logger.error(`Failed to report task result: ${res.status}`, {
-        taskId,
-        body: text,
-      });
+    const completeRes = await this.request("PUT", `/api/tasks/${taskId}/complete`, completeBody);
+
+    if (completeRes.ok) return;
+
+    // Fallback to old PUT /api/tasks/:id endpoint
+    if (completeRes.status === 404) {
+      const body: Record<string, unknown> = {
+        status: result.status,
+        output: result.output,
+        elapsedMs: result.elapsedMs,
+        completedAt: new Date().toISOString(),
+        agentId: this.agentId,
+      };
+
+      if (result.error) {
+        body.error = result.error;
+      }
+
+      if (result.artifacts.length > 0) {
+        body.artifacts = result.artifacts;
+      }
+
+      const res = await this.request("PUT", `/api/tasks/${taskId}`, body);
+      if (!res.ok) {
+        const text = await res.text();
+        this.logger.error(`Failed to report task result: ${res.status}`, {
+          taskId,
+          body: text,
+        });
+      }
+      return;
     }
+
+    const text = await completeRes.text();
+    this.logger.error(`Failed to report task result: ${completeRes.status}`, {
+      taskId,
+      body: text,
+    });
   }
 
   // -------------------------------------------------------------------------

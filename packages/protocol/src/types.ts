@@ -431,6 +431,65 @@ export const CloudRegionSchema = z.object({
 export type CloudRegion = z.infer<typeof CloudRegionSchema>;
 
 // =============================================================================
+// TASK QUEUE — Issue #55: Pull Model
+// =============================================================================
+
+/**
+ * Schema for PUT /api/tasks/:id/complete — agent reports task result.
+ *
+ * After claiming a task via GET /api/tasks/next, the agent executes it
+ * and reports back with status, output, artifacts, and optional subtasks.
+ */
+export const CompleteTaskSchema = z.object({
+  /** Final status: completed or failed */
+  status: z.enum(["completed", "failed"]),
+  /** Text describing what was done */
+  output: z.string().nullable().optional(),
+  /** Error message if failed */
+  error: z.string().nullable().optional(),
+  /** Artifacts produced (PRs, docs, files) */
+  artifacts: z.array(TaskArtifactSchema).optional(),
+  /** Subtasks to create for other roles */
+  subtasks: z.array(z.object({
+    title: z.string().min(1).max(500),
+    description: z.string().nullable().optional(),
+    roleTarget: z.string().uuid().nullable().optional(),
+    priority: TaskPrioritySchema.optional(),
+    input: z.string().nullable().optional(),
+  })).optional(),
+  /** Elapsed time in ms */
+  duration: z.number().int().nonnegative().optional(),
+  /** Token usage */
+  tokensUsed: z.object({
+    prompt: z.number().int().nonnegative(),
+    completion: z.number().int().nonnegative(),
+  }).optional(),
+});
+export type CompleteTask = z.infer<typeof CompleteTaskSchema>;
+
+/**
+ * Schema for POST /api/tasks/:id/subtasks — create a subtask during execution.
+ *
+ * Agents can create subtasks while working on a parent task:
+ * - PM analyzes demand → creates dev tasks + QA tasks
+ * - Dev finishes code → creates QA review task
+ * Dashboard shows the task tree: parent → subtasks → sub-subtasks
+ */
+export const CreateSubtaskSchema = z.object({
+  /** Subtask title */
+  title: z.string().min(1).max(500),
+  /** Detailed description */
+  description: z.string().nullable().optional(),
+  /** Role that should pick this up */
+  roleTarget: z.string().uuid().nullable().optional(),
+  /** Priority: high, medium, low */
+  priority: TaskPrioritySchema.optional(),
+  /** Additional input/context */
+  input: z.string().nullable().optional(),
+});
+export type CreateSubtask = z.infer<typeof CreateSubtaskSchema>;
+
+// =============================================================================
 // TASK PROGRESS
 // =============================================================================
 
