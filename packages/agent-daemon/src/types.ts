@@ -173,8 +173,8 @@ export interface IRegistryClient {
   /** POST /api/agents — register or upsert this agent */
   register(): Promise<void>;
 
-  /** POST /api/agents/:id/heartbeat — keep-alive */
-  heartbeat(): Promise<void>;
+  /** POST /api/agents/:id/heartbeat — keep-alive with status. Returns false if 404 (re-register needed). */
+  heartbeat(status?: "idle" | "working" | "error", currentTaskId?: string | null): Promise<boolean>;
 
   /** PUT /api/agents/:id — update agent status */
   updateStatus(status: string): Promise<void>;

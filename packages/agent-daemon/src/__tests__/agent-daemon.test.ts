@@ -66,7 +66,7 @@ function makeTask(overrides: Partial<DaemonTask> = {}): DaemonTask {
 function makeMockRegistry(): IRegistryClient {
   return {
     register: vi.fn().mockResolvedValue(undefined),
-    heartbeat: vi.fn().mockResolvedValue(undefined),
+    heartbeat: vi.fn().mockResolvedValue(true),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     pollTask: vi.fn().mockResolvedValue(null),
     reportTaskResult: vi.fn().mockResolvedValue(undefined),
@@ -441,7 +441,7 @@ describe("AgentDaemon", () => {
 
       // Registry agent endpoints
       if (urlStr.includes("/api/agents/") && urlStr.includes("heartbeat")) {
-        return new Response(JSON.stringify({ success: true, data: {} }), { status: 200 });
+        return new Response(JSON.stringify({ ack: true }), { status: 200 });
       }
       if (urlStr.includes("/api/agents/")) {
         return new Response(JSON.stringify({ success: true, data: {} }), { status: 200 });
@@ -559,20 +559,60 @@ describe("RegistryClient", () => {
     }
   });
 
-  it("heartbeat() sends POST to correct endpoint", async () => {
+  it("heartbeat() sends POST with status payload to correct endpoint", async () => {
     let capturedUrl = "";
+    let capturedBody = "";
 
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       capturedUrl = url;
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+      capturedBody = init?.body as string || "";
+      return new Response(JSON.stringify({ ack: true }), { status: 200 });
     }) as typeof fetch;
 
     try {
       const client = new RegistryClient(config, silentLogger);
-      await client.heartbeat();
+      const result = await client.heartbeat("idle", null);
 
       expect(capturedUrl).toContain(`/api/agents/${config.agentId}/heartbeat`);
+      expect(result).toBe(true);
+
+      const parsed = JSON.parse(capturedBody);
+      expect(parsed.status).toBe("idle");
+      expect(parsed.currentTaskId).toBeNull();
+      expect(parsed.timestamp).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("heartbeat() returns false on 404 (agent removed)", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Agent not found" }), { status: 404 }),
+    ) as typeof fetch;
+
+    try {
+      const client = new RegistryClient(config, silentLogger);
+      const result = await client.heartbeat("idle", null);
+
+      expect(result).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("heartbeat() returns true on server error (no re-register trigger)", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response("Internal Server Error", { status: 500 }),
+    ) as typeof fetch;
+
+    try {
+      const client = new RegistryClient(config, silentLogger);
+      const result = await client.heartbeat("working", "task-123");
+
+      expect(result).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

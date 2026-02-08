@@ -162,7 +162,8 @@ export class AgentDaemon {
   }
 
   // -------------------------------------------------------------------------
-  // Heartbeat loop
+  // Heartbeat loop — sends status + currentTaskId every interval
+  // Handles 404 by re-registering with the registry
   // -------------------------------------------------------------------------
 
   private startHeartbeat(): void {
@@ -170,8 +171,30 @@ export class AgentDaemon {
 
     const beat = async () => {
       try {
-        await this.registry.heartbeat();
-        this.logger.debug("Heartbeat sent");
+        // Determine current status from task poller
+        const activeTask = this.taskPoller.activeTask;
+        const status: "idle" | "working" | "error" = activeTask ? "working" : "idle";
+        const currentTaskId = activeTask?.id ?? null;
+
+        const ack = await this.registry.heartbeat(status, currentTaskId);
+
+        if (!ack) {
+          // 404 — agent was removed from registry, re-register
+          this.logger.warn("Heartbeat returned 404 — attempting re-registration");
+          this.addLog("lifecycle", "Agent removed from registry, re-registering");
+          try {
+            await this.registry.register();
+            this.logger.info("Re-registration successful");
+            this.addLog("lifecycle", "Re-registration successful");
+          } catch (regErr) {
+            this.logger.error("Re-registration failed", {
+              error: regErr instanceof Error ? regErr.message : String(regErr),
+            });
+            this.addLog("error", `Re-registration failed: ${regErr instanceof Error ? regErr.message : String(regErr)}`);
+          }
+        } else {
+          this.logger.debug("Heartbeat sent");
+        }
       } catch (err) {
         this.logger.warn("Heartbeat failed", {
           error: err instanceof Error ? err.message : String(err),

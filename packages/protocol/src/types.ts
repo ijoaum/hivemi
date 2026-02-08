@@ -523,6 +523,32 @@ export const AgentRoleFilesSchema = z.object({
 export type AgentRoleFiles = z.infer<typeof AgentRoleFilesSchema>;
 
 // =============================================================================
+// HEARTBEAT
+// =============================================================================
+
+/**
+ * Schema for POST /api/agents/:id/heartbeat — daemon sends heartbeat.
+ * Sent every 30 seconds to prove liveness.
+ */
+export const HeartbeatPayloadSchema = z.object({
+  /** Current agent status */
+  status: z.enum(["idle", "working", "error"]),
+  /** ID of the task currently being executed, or null */
+  currentTaskId: z.string().uuid().nullable(),
+  /** ISO 8601 timestamp from the daemon */
+  timestamp: z.string().datetime(),
+});
+export type HeartbeatPayload = z.infer<typeof HeartbeatPayloadSchema>;
+
+/**
+ * Response from POST /api/agents/:id/heartbeat.
+ */
+export const HeartbeatResponseSchema = z.object({
+  ack: z.boolean(),
+});
+export type HeartbeatResponse = z.infer<typeof HeartbeatResponseSchema>;
+
+// =============================================================================
 // P2P MESSAGES
 // =============================================================================
 

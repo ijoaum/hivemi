@@ -123,14 +123,33 @@ export class RegistryClient implements IRegistryClient {
 
   // -------------------------------------------------------------------------
   // Heartbeat — POST /api/agents/:id/heartbeat
+  // Sends status, currentTaskId, and timestamp.
+  // Returns true if acknowledged, false if 404 (agent removed — need re-register).
   // -------------------------------------------------------------------------
 
-  async heartbeat(): Promise<void> {
-    const res = await this.request("POST", `/api/agents/${this.agentId}/heartbeat`);
-    if (!res.ok) {
-      const text = await res.text();
-      this.logger.warn(`Heartbeat failed: ${res.status}`, { body: text });
+  async heartbeat(
+    status: "idle" | "working" | "error" = "idle",
+    currentTaskId: string | null = null,
+  ): Promise<boolean> {
+    const res = await this.request("POST", `/api/agents/${this.agentId}/heartbeat`, {
+      status,
+      currentTaskId,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (res.ok) {
+      return true;
     }
+
+    if (res.status === 404) {
+      // Agent was removed from registry — need to re-register
+      this.logger.warn("Heartbeat returned 404 — agent not found in registry, will re-register");
+      return false;
+    }
+
+    const text = await res.text();
+    this.logger.warn(`Heartbeat failed: ${res.status}`, { body: text });
+    return true; // Don't trigger re-register on server errors
   }
 
   // -------------------------------------------------------------------------

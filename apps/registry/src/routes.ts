@@ -10,6 +10,7 @@ import {
   authMiddleware, 
 } from "@hivemi/protocol";
 import agentRegistration from "./routes/agents.js";
+import heartbeatRoutes from "./routes/heartbeat.js";
 import cloudSettings from "./routes/cloud-settings.js";
 import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
@@ -136,6 +137,9 @@ app.delete("/api/roles/:id", async (c) => {
 // Agent registration (POST /api/agents) — upsert with validation
 app.route("/api/agents", agentRegistration);
 
+// Agent heartbeat (POST /api/agents/:id/heartbeat) — liveness + status
+app.route("/api/agents", heartbeatRoutes);
+
 app.get("/api/agents", async (c) => {
   try {
     const result = await db
@@ -255,23 +259,6 @@ app.delete("/api/agents/:id", async (c) => {
   } catch (error) {
     logger.error(error, "Failed to delete agent");
     return c.json({ success: false, error: "Failed to delete agent" }, 500);
-  }
-});
-
-app.post("/api/agents/:id/heartbeat", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const result = await db.update(agents)
-      .set({ lastHeartbeat: new Date(), status: "idle" })
-      .where(eq(agents.id, id))
-      .returning();
-    if (result.length === 0) {
-      return c.json({ success: false, error: "Agent not found" }, 404);
-    }
-    return c.json({ success: true, data: result[0] });
-  } catch (error) {
-    logger.error(error, "Failed to update heartbeat");
-    return c.json({ success: false, error: "Failed to update heartbeat" }, 500);
   }
 });
 
