@@ -1,5 +1,74 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #46: Agent Config — System Prompts & Config by Role
+
+### Summary
+Extracted hardcoded system prompts from agent source code into SOUL.md files, created a full config structure (base + role + instance overrides), and added Zod schemas + merge utility to `@hivemi/protocol`.
+
+### Done
+- **agents/_base/AGENTS.md:** Shared behavioral rules for all agents (task handling, communication, security)
+- **agents/_base/TOOLS.md:** Shared tool documentation (registry API, daemon, OpenClaw, env vars)
+- **agents/_base/config.json:** Base operational config (heartbeat, telemetry, log, task timeout, retries)
+- **Per-role SOUL.md:** Extracted SYSTEM_PROMPT from each agent's `src/index.ts` into rich Markdown files with personality, responsibilities, output format, and guidelines for: PM, Developer, QA, Tech Lead
+- **Per-role config.json:** Model, maxTokens, temperature, timeout — tuned per role (e.g. Developer gets higher maxTokens=8192 + lower temperature=0.3)
+- **Per-role tools.json:** Tool definitions with name, description, enabled flag per role
+- **Protocol schemas (Zod):**
+  - `AgentBaseConfigSchema` — validates base config
+  - `AgentRoleConfigSchema` — validates role config
+  - `AgentToolSchema` + `AgentToolsConfigSchema` — tool definitions
+  - `AgentInstanceOverridesSchema` — deploy-time overrides (all optional)
+  - `AgentMergedConfigSchema` — final resolved config
+  - `AgentRoleFilesSchema` — complete file bundle for bootstrapper
+- **`mergeAgentConfig()`** — merges base + role + instance overrides with Zod validation
+- **Agent source refactor:** All 4 agents now load SOUL.md from file at startup (workspace → role dir → inline fallback)
+- **Bootstrapper update:** RoleConfig now supports optional `toolsJson`, copyRoleConfig writes it to VM workspace
+- **13 unit tests** for config schemas and merger (all passing)
+- **20 bootstrapper tests** still passing (backward compatible)
+
+### Key Decisions
+- **SOUL.md as rich Markdown** (not plain text) — includes personality, responsibilities, output format, and guidelines. More context for the LLM than a bare system prompt.
+- **Three-layer merge:** base → role → instance. Instance overrides come from Dashboard at deploy time. Only defined fields override.
+- **File loading order** in agents: OpenClaw workspace (`~/.openclaw/workspace/SOUL.md`) first (production, bootstrapper puts it there), then adjacent role directory (development), then inline fallback (should never happen).
+- **tools.json is declarative** — defines what tools a role _should_ have access to. Actual tool implementation is a later concern (Agent Daemon / OpenClaw integration).
+- **Temperature per role:** PM=0.7 (creative analysis), Developer=0.3 (precise code), QA=0.3 (systematic review), Tech Lead=0.5 (balanced).
+
+### Structure
+```
+agents/
+  _base/
+    AGENTS.md              # shared behavior rules
+    TOOLS.md               # shared tool docs
+    config.json            # heartbeat, telemetry, log, task params
+  pm/
+    SOUL.md                # PM personality + output format
+    config.json            # model, maxTokens=4096, temp=0.7
+    tools.json             # create-subtask, query-tasks, notify-agent
+  developer/
+    SOUL.md                # Developer personality + output format
+    config.json            # model, maxTokens=8192, temp=0.3
+    tools.json             # file-read, file-write, shell-exec, query-tasks
+  qa/
+    SOUL.md                # QA personality + output format
+    config.json            # model, maxTokens=4096, temp=0.3
+    tools.json             # file-read, shell-exec, report-issue, query-tasks
+  tech-lead/
+    SOUL.md                # Tech Lead personality + output format
+    config.json            # model, maxTokens=4096, temp=0.5
+    tools.json             # file-read, create-subtask, query-tasks, notify-agent
+```
+
+### Commits
+- `ba3d16d` — feat(agents): extract system prompts to SOUL.md and create config structure
+- `19af011` — feat(protocol): add agent config schemas and merge utility
+- `293e53b` — refactor(agents): load SOUL.md from file instead of hardcoded strings
+- `6bbcd71` — feat(bootstrapper): support tools.json in role config
+
+### Next
+- #47 (Agent Daemon) — will use merged config + tools.json to configure agent behavior
+- #49 (Deploy Orchestrator) — will call mergeAgentConfig() when building BootstrapConfig
+
+---
+
 ## 2026-02-09 — Issue #44: Provisioner — Cloud Provider Abstraction
 
 ### Summary
