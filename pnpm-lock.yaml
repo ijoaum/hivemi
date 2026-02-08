@@ -160,9 +160,15 @@ importers:
 
   apps/manager:
     dependencies:
+      '@hivemi/bootstrapper':
+        specifier: workspace:*
+        version: link:../../packages/bootstrapper
       '@hivemi/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@hivemi/provisioner':
+        specifier: workspace:*
+        version: link:../../packages/provisioner
       '@hono/node-server':
         specifier: ^1.13.8
         version: 1.19.9(hono@4.11.8)
@@ -188,6 +194,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.9)(lightningcss@1.30.2)
 
   apps/registry:
     dependencies:
@@ -228,6 +237,22 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+
+  packages/agent-daemon:
+    dependencies:
+      '@hivemi/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.7
+        version: 22.19.9
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.9)(lightningcss@1.30.2)
 
   packages/agent-runtime:
     dependencies:
