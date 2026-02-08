@@ -1,5 +1,72 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #44: Provisioner — Cloud Provider Abstraction
+
+### Summary
+Implemented `packages/provisioner` — cloud-agnostic VM management abstraction. Handles creating/destroying VMs, SSH key registration, firewall management, reconciliation, and cost estimation. Knows nothing about HiveMI agents — pure infra.
+
+### Done
+- **types.ts:** Full type system — `ICloudProvider` interface, `InstanceSpec`, `Instance`, `FirewallRule`, `SizeMappings`, `ProvisionerLogger`, etc.
+- **providers/digitalocean.ts:** Complete DO API v2 implementation:
+  - `createInstance` — creates droplet with tags, cloud-init, VPC, auto-attaches firewall
+  - `destroyInstance` — DELETE /droplets/:id
+  - `listInstances` — supports tag filtering (server + client-side for multi-tag)
+  - `getStatus` — single droplet lookup
+  - `waitReady` — polls for active status + SSH port 22 reachable via TCP socket
+  - `ensureSSHKey` — upsert by name, returns ID
+  - `ensureFirewall` — upsert by name, creates or updates rules
+  - `addInstanceToFirewall` / `removeInstanceFromFirewall`
+- **providers/gcp.ts:** Stub — size mappings and cost data ready, all methods throw "not implemented"
+- **ssh-key.ts:** `SSHKeyManager` — wraps provider.ensureSSHKey with in-memory cache, avoids redundant API calls
+- **firewall.ts:** `FirewallManager` — manages "hivemi-agents" firewall lifecycle:
+  - `createDefaultRules()` — SSH(22) + daemon(3100) from control plane only, all outbound
+  - `ensureFirewall()` — idempotent, caches ID
+  - `addInstance()` / `removeInstance()`
+- **reconciliation.ts:** Detects orphaned VMs (no agent), phantom agents (no VM), and healthy matches
+- **cost.ts:** Estimates monthly cost from size mappings, generates human-readable summary
+- **index.ts:** Re-exports everything + `createProvider()` factory function
+- **23 unit tests** — all passing, mock provider, covers all modules
+
+### Key Decisions
+- **`ICloudProvider` is the core interface** — everything else (SSHKeyManager, FirewallManager, reconciliation, cost) composes on top of it. Adding a new provider = implement one interface.
+- **Size abstraction** (small/medium/large) maps to provider-specific slugs + cost. Most agents use "small" ($6/mo on DO).
+- **TCP socket check** for SSH readiness instead of spawning `ssh` — faster, no auth needed, no dependencies.
+- **Firewall includes daemon port 3100** — the agent daemon that the Deploy Orchestrator communicates with.
+- **ProvisionerLogger interface** — pluggable, defaults to console. Tests use silent logger.
+- **No @hivemi/protocol runtime coupling** — types are self-contained. Protocol is a dev dependency for potential future use.
+
+### Structure
+```
+packages/provisioner/
+  src/
+    index.ts                    — exports + createProvider factory
+    types.ts                    — all type definitions
+    providers/
+      digitalocean.ts           — full DO API v2 implementation
+      gcp.ts                    — stub
+      index.ts                  — re-exports
+    firewall.ts                 — FirewallManager + createDefaultRules
+    ssh-key.ts                  — SSHKeyManager with caching
+    reconciliation.ts           — VM vs Registry drift detection
+    cost.ts                     — monthly cost estimation
+    __tests__/
+      provisioner.test.ts       — 23 unit tests
+```
+
+### Commits
+- `437136c` — feat(provisioner): implement cloud provider abstraction
+
+### Note
+Code was originally written in a previous run (issue-44 run at 2026-02-08T22:04:36Z) that failed due to API fetch error — the code was good but never committed. This run fixed unused imports in tests, verified build + tests, and committed properly.
+
+### Next
+- #61 (DigitalOcean Provider enhancements) — additional DO-specific features
+- #62 (Firewall and SSH Key management) — more advanced key rotation, multi-key support
+- #63 (Reconciliation and Costs) — dashboard integration, scheduled reconciliation
+- #49 (Deploy Orchestrator) — consumes provisioner to manage full deploy lifecycle
+
+---
+
 ## 2026-02-09 — Issue #45: Bootstrapper — VM Configuration Package
 
 ### Summary
