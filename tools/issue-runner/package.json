@@ -1,0 +1,15 @@
+{
+  "name": "@hivemi/issue-runner",
+  "version": "1.0.0",
+  "description": "Sequential GitHub issue executor via OpenClaw Chat Completions API",
+  "type": "module",
+  "main": "runner.js",
+  "bin": {
+    "issue-runner": "./runner.js"
+  },
+  "scripts": {
+    "start": "node runner.js",
+    "dry-run": "node runner.js --dry-run"
+  },
+  "dependencies": {}
+}
