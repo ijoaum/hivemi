@@ -1,5 +1,113 @@
 # HiveMI Development Journal
 
+## 2026-02-09 — Issue #49: Deploy Orchestrator — Full Deploy Flow via Manager
+
+### Summary
+Implemented the Deploy Orchestrator in the Manager — the central coordinator for the full deploy lifecycle (provision → bootstrap → register) and task queue creation. Includes SSE streaming, phase retry, undeploy/redeploy, and comprehensive tests.
+
+### Done
+- **DeployOrchestrator class** (`apps/manager/src/lib/deploy-orchestrator.ts`):
+  - Full deploy sequence: create agent → create deploy record → provision VM → bootstrap (secrets, OpenClaw, role config, daemon) → wait for registration → mark ready
+  - Phase tracking with timeouts: provisioning (2m), installing (10m), configuring (5m), registering (2m)
+  - `startDeploy()` — returns immediately with deployId/agentId, runs pipeline async
+  - `undeploy()` — destroys VM, updates agent/deploy status to destroyed
+  - `redeploy()` — undeploy + startDeploy in sequence
+  - `retryPhase()` — retries a failed deploy from a specific phase (resets failed + subsequent phases)
+  - Event emission via EventEmitter for SSE streaming
+  - Bootstrapper phase mapping: cloud-init → installing, ssh-connect → installing, inject-secrets/configure-openclaw/copy-role-config/install-daemon → configuring, wait-registration → registering
+  - In-memory active deploy state for real-time queries
+
+- **Enhanced RegistryClient** (`apps/manager/src/lib/registry-client.ts`):
+  - Full CRUD for agents, tasks, deploys, roles, teams
+  - Cloud config fetch with internal endpoint (decrypted secrets)
+  - Deploy operations: create, update, get, list
+  - Task operations: create, get, list with roleTarget/status/teamId/limit filters
+
+- **Manager Routes** (`apps/manager/src/routes.ts`):
+  - `GET /api/deploy` — list all deploys (enriched with live state for active deploys)
+  - `POST /api/deploy` — start new deploy
+  - `GET /api/deploy/:id` — get deploy status (live or from registry)
+  - `DELETE /api/deploy/:id` — undeploy
+  - `POST /api/deploy/:id/redeploy` — destroy and recreate
+  - `POST /api/deploy/:id/retry` — retry failed deploy from a phase
+  - `GET /api/deploy/:id/stream` — SSE event stream with heartbeat
+  - Lazy orchestrator initialization with provisioner/bootstrapper proxies
+
+- **Task Routes** (`apps/manager/src/routes/tasks.ts`):
+  - `POST /api/tasks` — create task in queue (status: queued, roleTarget for pull model)
+  - `GET /api/tasks` — list with status/teamId/roleTarget/limit filters
+  - `GET /api/tasks/:id` — get single task
+
+- **Registry Enhancements** (`apps/registry/src/routes.ts`):
+  - GET /api/tasks now supports `roleTarget` and `limit` query params
+  - Internal cloud config endpoint with decrypted secrets for Manager
+
+- **Dashboard Proxy Routes**:
+  - 5 deploy proxy routes (POST, GET/:id, DELETE/:id, POST/:id/redeploy, POST/:id/retry, GET/:id/stream)
+  - Task routes now proxy to Manager (not Registry) for proper orchestration
+
+- **35 unit tests** — all passing, covering:
+  - Deploy start (records, state, phases, custom config, events, provisioner calls, bootstrapper calls, completion)
+  - Error handling (missing cloud config, missing tokens, missing SSH keys, provisioner failure, bootstrapper failure, agent cleanup)
+  - Undeploy (VM destroy, agent status, active deploy removal, graceful VM-not-found, events)
+  - Redeploy (destroy old → create new)
+  - Phase retry (validation, phase reset, events)
+  - State accessors (active deploys, unknown deploy)
+  - Event emission (deploy-specific channel, phase_update events)
+
+### Key Decisions
+- **Lazy orchestrator initialization** — the orchestrator is created on first deploy request, not at startup. This avoids requiring cloud config to be configured before the Manager can start.
+- **Provisioner/Bootstrapper proxies** — dynamic imports of `@hivemi/provisioner` and `@hivemi/bootstrapper` avoid requiring these packages at startup. The provisioner proxy lazy-loads the cloud provider based on cloud config from the registry.
+- **Task creation routes through Manager** — Dashboard POSTs tasks to Manager (not Registry directly) so the Manager can add orchestration logic in the future (e.g., automatic task decomposition by PM agent).
+- **Phase retry is declarative** — `retryPhase()` resets the failed phase and all subsequent phases, then re-tracks the deploy in memory. Full re-execution from a specific phase is noted for a future iteration.
+- **SSE includes heartbeat** — 15s keepalive heartbeats prevent proxy/load balancer timeouts.
+- **Deploy list enriched with live state** — `GET /api/deploy` merges registry data with in-memory active deploy state for real-time accuracy.
+
+### API Summary
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/deploy` | List all deploys |
+| POST | `/api/deploy` | Start new deploy |
+| GET | `/api/deploy/:id` | Deploy status |
+| DELETE | `/api/deploy/:id` | Undeploy (destroy VM) |
+| POST | `/api/deploy/:id/redeploy` | Destroy + recreate |
+| POST | `/api/deploy/:id/retry` | Retry from failed phase |
+| GET | `/api/deploy/:id/stream` | SSE event stream |
+| POST | `/api/tasks` | Create task in queue |
+| GET | `/api/tasks` | List tasks with filters |
+| GET | `/api/tasks/:id` | Get single task |
+
+### Structure
+```
+apps/manager/
+  src/
+    lib/
+      deploy-orchestrator.ts   — DeployOrchestrator class + types
+      registry-client.ts       — Enhanced HTTP client for Registry
+      logger.ts                — Pino logger
+    routes/
+      deploy.ts                — Deploy route handlers (modular)
+      tasks.ts                 — Task route handlers
+    routes.ts                  — Main Hono app with all routes
+    index.ts                   — Server entry point
+    __tests__/
+      deploy-orchestrator.test.ts — 35 unit tests
+  vitest.config.ts             — Test configuration
+```
+
+### Commits
+- `ffff019` — feat(manager): deploy orchestrator with full lifecycle, SSE streaming, and task queue
+- `1a6a2c5` — feat(registry): add roleTarget + limit filters to task list and internal cloud config endpoint
+- `6a24e26` — feat(dashboard): proxy routes for deploy and task operations via Manager
+
+### Next
+- #50 (Dashboard) — UI for deploy progress (SSE), task list, task creation
+- #55 (Task Queue) — server-side `SELECT FOR UPDATE SKIP LOCKED` for atomic task claiming
+- #70 (Undeploy Enhancement) — more sophisticated cleanup and resource reclamation
+- #72 (Task Cancellation) — cancel running tasks via agent notification
+
+---
+
 ## 2026-02-09 — Issue #47 (Refinement): Daemon Path Alignment
 
 ### Summary
