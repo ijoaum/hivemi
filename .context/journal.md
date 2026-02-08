@@ -1,5 +1,77 @@
 # HiveMI Development Journal
 
+## 2026-02-10 — Issue #54: Protocol — Agent Telemetry
+
+### Summary
+Refined and completed the agent telemetry protocol. The base endpoints and daemon collector existed from Issue #48, but this issue formalized the protocol spec: added `ts` field for daemon-provided timestamps, aligned `loadAvg` to send a single number (1-min average) per the spec, added Zod validation constraints, and implemented three-tier data retention.
+
+### Done
+- **Protocol types** (`packages/protocol/src/types.ts`):
+  - Added `ts` (ISO 8601 datetime, optional) to `SubmitTelemetrySchema` — daemon sends its own timestamp
+  - Updated `TelemetryInfraSchema.loadAvg` to accept `z.union([z.number(), z.array(z.number())])` — single number per spec, array for backward compat
+  - Added validation constraints: `cpu` 0-100, `memUsed`/`memTotal`/`diskUsed`/`diskTotal` non-negative integers, LLM counters non-negative, `uptime` non-negative
+  - Added JSDoc comments documenting the protocol
+
+- **Registry telemetry routes** (`apps/registry/src/routes/telemetry.ts`):
+  - POST now uses daemon-provided `ts` as record timestamp when present, falls back to server time
+  - Three-tier retention in cleanup endpoint:
+    1. Last 24h: granular (every 60s)
+    2. 24h → 7d: aggregate to 1 record per hour
+    3. 7d → 30d: aggregate to 1 record per day
+    4. >30d: delete
+  - Response now includes `deletedHourlyAggregated` and `deletedDailyAggregated` counts
+
+- **Daemon telemetry** (`packages/agent-daemon/src/telemetry.ts`):
+  - `buildSnapshot()` now includes `ts` field (ISO 8601 from daemon clock)
+  - `collectInfra()` sends `loadAvg` as single number (1-min average) instead of array
+  - Updated `TelemetrySnapshot` type in `types.ts` to match
+
+- **DB schema** (`apps/registry/src/db/schema.ts`):
+  - Updated `TelemetryInfra.loadAvg` type to `number | number[]` for backward compat
+
+- **27 new tests** (`apps/registry/src/__tests__/telemetry.test.ts`):
+  - POST: full payload, no ts, partial payload, empty payload, array loadAvg, 404, validation errors, ts format, heartbeat update, single loadAvg
+  - GET: latest, null when empty, 404, limit param
+  - GET history: default range, from/to, limit, limit cap, 404, invalid date
+  - Cleanup: results reporting, no records, three-tier stages
+  - Protocol compliance: exact Issue #54 payload, cpu range, negative memory, negative LLM counters
+
+- **Daemon tests updated**: snapshot test now checks for `ts` field and single number `loadAvg`
+
+### Key Decisions
+- **`ts` is optional** — server falls back to `new Date()` if the daemon doesn't provide it. This ensures backward compat with daemons that haven't been updated.
+- **`loadAvg` union type** — protocol spec says single number (0.75), but we accept arrays too. The daemon sends the 1-minute average as a single number. The schema `z.union([z.number(), z.array(z.number())])` handles both.
+- **30-day retention** — extended from 7d to 30d. Data beyond 24h is aggregated to hourly, beyond 7d to daily, beyond 30d is deleted. This gives good historical visibility without unbounded storage growth.
+- **Validation constraints** — added `.min(0)`, `.max(100)` etc. to prevent obviously invalid data from being stored. Better to reject bad data at the API boundary.
+
+### Endpoints (unchanged from #48, refined)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/agents/:id/telemetry` | Daemon submits metrics (every 60s) |
+| GET | `/api/agents/:id/telemetry` | Latest metrics (supports `?limit=N`) |
+| GET | `/api/agents/:id/telemetry/history` | Historical with `?from=&to=&limit=` |
+| POST | `/api/telemetry/cleanup` | Three-tier retention cleanup |
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | +ts field, +validation constraints, +union loadAvg |
+| `apps/registry/src/routes/telemetry.ts` | Use ts, three-tier retention |
+| `apps/registry/src/db/schema.ts` | TelemetryInfra.loadAvg type update |
+| `apps/registry/src/__tests__/telemetry.test.ts` | NEW — 27 tests |
+| `packages/agent-daemon/src/types.ts` | TelemetrySnapshot +ts, loadAvg: number |
+| `packages/agent-daemon/src/telemetry.ts` | Send ts + single loadAvg |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Updated snapshot assertions |
+
+### Commits
+- `c0d5581` — feat(protocol): agent telemetry protocol with ts field, retention tiers, and validation
+
+### Next
+- #55 (Task Queue) — server-side `SELECT FOR UPDATE SKIP LOCKED` for atomic task claiming
+- #50 (Dashboard) — UI for agent telemetry (charts, metrics display)
+
+---
+
 ## 2026-02-10 — Issue #53: Protocol — Heartbeat & Offline Detection
 
 ### Summary
