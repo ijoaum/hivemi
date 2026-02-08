@@ -1,5 +1,64 @@
 # HiveMI Development Journal
 
+## 2026-02-08 — Day 2: Deploy Real Architecture
+
+### Session Summary
+Planned the real agent deployment architecture and created GitHub issues for all components.
+
+### What Was Done
+
+#### Dashboard Improvement
+- Random agent name pre-filled in deploy modal with dice button (Dices icon) to regenerate
+- 64 cool agent names (Atlas, Nova, Cipher, Vega, etc.)
+- Commit: `b40e022`
+
+#### Architecture Design: Real Agent Deploy
+Designed the full architecture for deploying agents to real cloud VMs:
+
+**Control Plane** (existing server) — Registry, Manager, Dashboard, Postgres
+**Agent VMs** (cloud) — Each agent runs on its own VM with OpenClaw + agent-daemon
+
+**4 New Components:**
+1. **Provisioner** — Cloud provider abstraction (create/destroy VMs). Interface-based, swap DO↔GCP easily.
+2. **Bootstrapper** — Configures VM post-creation. Cloud-init installs OpenClaw, SSH injects secrets + config. SecretProvider abstraction (1Password, env file).
+3. **Agent Daemon** — Systemd service on agent VM. Auto-registers in Registry, heartbeat, telemetry, task execution via local OpenClaw.
+4. **Deploy Orchestrator** — In Manager, coordinates full flow: create VM → wait boot → configure → wait registration → done.
+
+#### GitHub Issues Created (#44-#51)
+- #44 — Provisioner: Cloud Provider abstraction (DigitalOcean first)
+- #45 — Bootstrapper: Automated VM configuration (cloud-init + SSH)
+- #46 — Agent Config: System prompts and role configuration structure
+- #47 — Agent Daemon: Resident process on agent VM (systemd, telemetry, tasks)
+- #48 — Registry: Telemetry endpoints and deploy status tracking
+- #49 — Deploy Orchestrator: End-to-end deploy flow via Manager
+- #50 — Dashboard: Real deploy UI with progress and telemetry
+- #51 — Security: SSH keys, networking, secure communication
+
+#### Server Hardening
+- SSH hardened: password auth disabled, pubkey only
+- João's ed25519 key added to root authorized_keys
+
+### Architecture Decision
+- Registry remains the single source of truth for agents (already is today)
+- No separate agent persistence — daemon self-registers, Registry owns it
+- OpenClaw is the LLM runtime, not reimplemented
+- Abstractions via interfaces for cloud and secrets — swap providers without changing orchestrator
+
+### Execution Order
+```
+#44 Provisioner → #45 Bootstrapper → #46 Agent Config
+                                          ↓
+#48 Registry Telemetry → #47 Agent Daemon
+                              ↓
+#49 Deploy Orchestrator → #50 Dashboard UI
+#51 Security (parallel)
+```
+
+### Branch
+`dev` — Latest commit: `b40e022`
+
+---
+
 ## 2026-02-07 — Day 1: From Zero to Full Dashboard
 
 ### Session Summary
