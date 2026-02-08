@@ -188,6 +188,22 @@ async function addIssueComment(number, body) {
   });
 }
 
+async function closeIssue(number) {
+  const url = `https://api.github.com/repos/${CONFIG.githubRepo}/issues/${number}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `token ${CONFIG.githubToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ state: "closed", state_reason: "completed" }),
+  });
+  if (!res.ok) {
+    throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
+  }
+  log("info", `Issue #${number} closed on GitHub`);
+}
+
 // ─── OpenClaw Chat Completions API ───────────────────────────────────────────
 
 async function executeTask(prompt, issueNumber) {
@@ -273,11 +289,16 @@ You are implementing this issue for the HiveMI project.
 
 ### Rules:
 1. Read the project structure and existing code before making changes
-2. Read the journal at \`.context/journal.md\` for architecture context
+2. Read the journal at \`.context/journal.md\` for architecture context and decisions
 3. Make atomic commits — each functional step gets its own commit
-4. Update the checklist in the GitHub issue as you complete items
-5. Run builds/tests to verify your changes work
-6. When done, update the journal with what you did
+4. Run builds/tests to verify your changes work
+5. Commit directly to the \`dev\` branch — no PRs needed
+6. Push your commits when done: \`git push origin dev\`
+
+### After completing the implementation:
+1. **Update the journal** at \`.context/journal.md\` — add a new section for this issue with what was done, key decisions, and any notes for future issues
+2. **Commit the journal update** as a separate commit: \`docs: journal - issue #${issue.number} completed\`
+3. **Push all commits** to the remote
 
 ### Commit convention:
 - feat: new functionality
@@ -448,6 +469,10 @@ ${parsed.summary}
   // Remove in-progress label
   if (parsed.status === "success") {
     await updateIssueLabels(issueNumber, ["done"]).catch(() => {});
+    // Close the issue
+    await closeIssue(issueNumber).catch((e) =>
+      log("warn", `Failed to close issue: ${e.message}`)
+    );
   }
 
   return { ...result, parsed, elapsed };
