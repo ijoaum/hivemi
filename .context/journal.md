@@ -20,9 +20,26 @@ Designed full deploy system architecture. Created 29 GitHub issues (#44-#72).
 - Immutable deploys (destroy + redeploy to update)
 - `running` → `locked` in task_status; `online` removed from agent_status
 - Cloud API token in 1Password, settings table holds reference only
+- **Daemon → OpenClaw via Chat Completions API** (`POST /v1/chat/completions`): cada task = um request HTTP = sessão nova com contexto limpo. Sem WebSocket, sem acumular histórico. O daemon faz um POST com o prompt da task e recebe a resposta quando terminar.
+
+### Architecture: Task Execution Flow
+```
+Registry (task queue) → Agent Daemon (polls) → OpenClaw Chat Completions API (local)
+                                                  ↓
+                                            Nova sessão por task
+                                            Sandbox off, elevated full
+                                            Acesso ao filesystem (git, pnpm, etc)
+                                                  ↓
+                                            Resposta com resultado
+                                                  ↓
+                                        Daemon reporta resultado ao Registry
+```
 
 ### Implementation Order
 `#69 DB → #44 Provisioner → #71 Settings → #45 Bootstrapper → #46 Config → #48 Registry → #47 Daemon → #55 Queue → #49 Orchestrator → #50 Dashboard → #70 Undeploy → #72 Cancellation`
+
+### Issue #73 — Bootstrap: Chat Completions API config
+Configurar no OpenClaw de cada agente: endpoint habilitado, sandbox off, elevated full, token único.
 
 ### Branch: `dev` — Latest: `b40e022`
 
