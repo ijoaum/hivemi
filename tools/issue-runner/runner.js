@@ -45,6 +45,10 @@ const CONFIG = {
   githubToken: process.env.GITHUB_TOKEN || "",
   githubRepo: process.env.GITHUB_REPO || "ijoaum/hivemi",
   model: process.env.OPENCLAW_MODEL || "openclaw:main",
+  // Allowed issue authors — only run issues created by these users
+  allowedAuthors: (process.env.ALLOWED_AUTHORS || "ijoaum,clawdiabot26")
+    .split(",")
+    .map((s) => s.trim().toLowerCase()),
   // Max time per issue (ms) — default 30min
   issueTimeoutMs: parseInt(process.env.ISSUE_TIMEOUT_MS || "1800000", 10),
   // Delay between issues (ms) — let things settle
@@ -370,6 +374,16 @@ async function runIssue(issueNumber, dryRun = false) {
     return { skipped: true, reason: "closed" };
   }
 
+  // Check author allowlist
+  const author = (issue.user?.login || "").toLowerCase();
+  if (!CONFIG.allowedAuthors.includes(author)) {
+    log(
+      "warn",
+      `Issue #${issueNumber} author "${issue.user?.login}" not in allowlist [${CONFIG.allowedAuthors.join(", ")}], skipping`
+    );
+    return { skipped: true, reason: "unauthorized_author" };
+  }
+
   // Fetch comments for context
   const comments = await fetchIssueComments(issueNumber);
   log("info", `Comments: ${comments.length}`);
@@ -488,6 +502,7 @@ Environment:
     console.log(`  Updated:   ${tracker.updatedAt}`);
     console.log(`  Gateway:   ${CONFIG.gatewayUrl}`);
     console.log(`  Model:     ${CONFIG.model}`);
+    console.log(`  Authors:   [${CONFIG.allowedAuthors.join(", ")}]`);
     console.log();
     process.exit(0);
   }

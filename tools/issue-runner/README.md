@@ -54,6 +54,7 @@ node runner.js --issue 69
 | `ISSUE_TIMEOUT_MS` | `1800000` (30min) | Max time per issue |
 | `DELAY_BETWEEN_MS` | `5000` (5s) | Delay between issues |
 | `ISSUE_QUEUE` | *(from tracker)* | Override queue (comma-separated) |
+| `ALLOWED_AUTHORS` | `ijoaum,clawdiabot26` | Only run issues from these GitHub users |
 
 ## File Structure
 
