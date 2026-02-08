@@ -1,0 +1,8 @@
+{
+  "currentIssue": null,
+  "status": "idle",
+  "completedIssues": [],
+  "issueQueue": [69, 44, 71, 45, 46, 48, 47, 55, 49, 50, 70, 72],
+  "updatedAt": "2026-02-08T18:55:00Z",
+  "notes": "Leia este arquivo ao acordar pra saber o que implementar. Ordem reflete dependências."
+}
