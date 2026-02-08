@@ -1,5 +1,133 @@
 # HiveMI Development Journal
 
+## 2026-02-10 — Issue #55: Protocol — Task Queue with Lock (Pull Model)
+
+### Summary
+Implemented the pull-model task queue using PostgreSQL's `SELECT FOR UPDATE SKIP LOCKED` for atomic, race-free task claiming. Agents poll `GET /api/tasks/next?role=<roleId>`, and the registry atomically finds the highest-priority queued task, locks it, and returns it — all in a single SQL statement. No two agents can ever grab the same task.
+
+### Done
+- **Atomic task claim** (`apps/registry/src/routes/tasks.ts`):
+  - `GET /api/tasks/next?role=<roleId>&agentId=<agentId>` — core pull-model endpoint
+  - Uses CTE with `SELECT ... FOR UPDATE SKIP LOCKED` + immediate `UPDATE` in same statement
+  - Priority ordering: `CASE priority WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END DESC`
+  - FIFO within same priority: `ORDER BY created_at ASC`
+  - Role matching: `WHERE role_target = <roleId> OR role_target IS NULL`
+  - Sets `status = locked`, `locked_by`, `locked_at`, `started_at`, `agent_id` atomically
+  - Returns 204 No Content when no tasks available
+  - Validates role and agent existence before attempting claim
+
+- **Structured task completion** (`PUT /api/tasks/:id/complete`):
+  - Validates task is in `locked` status (409 if not)
+  - Accepts: `status` (completed/failed), `output`, `error`, `artifacts`, `subtasks`, `duration`, `tokensUsed`
+  - Clears lock fields (`lockedBy`, `lockedAt`) on completion
+  - Auto-creates subtasks with `parentTaskId` set — enables task trees
+  - Updates agent status back to `idle` and clears `currentTaskId`
+
+- **Subtask creation** (`POST /api/tasks/:id/subtasks`):
+  - Creates subtask linked to parent via `parentTaskId`
+  - Inherits `teamId` from parent task
+  - Validates `roleTarget` exists if provided
+  - Born with `status = queued` — immediately available for claiming
+
+- **Lock timeout job** (`apps/registry/src/lib/lock-timeout.ts`):
+  - Runs every 60s (configurable via `LOCK_CHECK_INTERVAL_MS`)
+  - Default lock timeout: 10 minutes (configurable via `LOCK_TIMEOUT_MS`)
+  - Checks each stale locked task:
+    - Agent offline/unreachable/destroyed → release task back to `queued`
+    - Agent still alive (idle/working/error) → keep locked (task may be heavy)
+    - Agent doesn't exist → release
+    - No `lockedBy` → release
+  - Releases by setting `status = queued`, clearing `lockedBy/lockedAt/startedAt/agentId`
+  - Started automatically when registry server boots
+
+- **Protocol schemas** (`packages/protocol/src/types.ts`):
+  - `CompleteTaskSchema` — validates completion payload with artifacts, subtasks, duration, tokensUsed
+  - `CreateSubtaskSchema` — validates subtask creation with title, description, roleTarget, priority, input
+
+- **Daemon update** (`packages/agent-daemon/src/registry-client.ts`):
+  - `reportTaskResult()` now uses `PUT /api/tasks/:id/complete` first
+  - Falls back to old `PUT /api/tasks/:id` if complete endpoint returns 404
+  - Sends `duration` (elapsed ms) instead of separate `elapsedMs` field
+
+- **Existing endpoints updated** (`apps/registry/src/routes.ts`):
+  - `POST /api/tasks/:id/retry` — now clears `lockedBy`, `lockedAt`, `agentId`
+  - `POST /api/tasks/:id/cancel` — now clears `lockedBy`, `lockedAt`
+
+- **Dashboard proxy routes**:
+  - `GET /api/tasks/next` → Registry
+  - `PUT /api/tasks/:id/complete` → Registry
+  - `POST /api/tasks/:id/subtasks` → Registry
+
+- **39 new tests** (`apps/registry/src/__tests__/task-queue.test.ts`):
+  - CompleteTaskSchema: full payload, minimal, failure, invalid status, missing status, negative duration, negative tokens, multiple artifacts, multiple subtasks
+  - CreateSubtaskSchema: full, minimal, empty title, long title, invalid UUID, null roleTarget
+  - Lock timeout logic: dead statuses, alive statuses, default timeout, cutoff calculation, release payload, null lockedBy, missing agent
+  - Priority ordering: valid values, invalid values
+  - Task completion flow: PM→subtasks, Dev→PR artifact, failure with error
+  - Role matching: matching role, null role (any), different role
+  - Subtask tree: teamId inheritance, born queued
+
+### Key Decisions
+- **Single SQL statement for claim** — the CTE `WITH next_task AS (SELECT ... FOR UPDATE SKIP LOCKED) UPDATE tasks ... FROM next_task` approach ensures the SELECT and UPDATE happen in a single round-trip. No gap between finding and locking the task.
+- **Agent-aware lock timeout** — unlike a simple "release after X minutes", we check if the agent is still alive. A working agent with a heavy 30-minute task shouldn't have its lock stolen. Only dead agents (offline/unreachable/destroyed) lose their locks.
+- **Subtask creation in completion** — agents can create subtasks atomically as part of completing their own task. This enables the PM→Dev→QA workflow naturally.
+- **204 for empty queue** — returns no body when no tasks match. The daemon already handles this correctly.
+- **Role validation on claim** — validates that the roleId and agentId exist before running the lock query. Prevents orphaned locks from invalid IDs.
+
+### SQL: The Atomic Lock
+```sql
+WITH next_task AS (
+  SELECT id FROM tasks
+  WHERE status = 'queued'
+    AND (role_target = $1 OR role_target IS NULL)
+  ORDER BY
+    CASE priority
+      WHEN 'high' THEN 3
+      WHEN 'medium' THEN 2
+      WHEN 'low' THEN 1
+    END DESC,
+    created_at ASC
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE tasks
+SET status = 'locked', locked_by = $2, locked_at = NOW(), started_at = NOW(), agent_id = $2
+FROM next_task
+WHERE tasks.id = next_task.id
+RETURNING tasks.*
+```
+
+### Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/tasks/next?role=&agentId=` | Atomic task claim (pull model) |
+| PUT | `/api/tasks/:id/complete` | Report task result |
+| POST | `/api/tasks/:id/subtasks` | Create subtask |
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/registry/src/routes/tasks.ts` | NEW — task queue endpoints |
+| `apps/registry/src/lib/lock-timeout.ts` | NEW — stale lock release job |
+| `apps/registry/src/index.ts` | Start lock timeout job on boot |
+| `apps/registry/src/routes.ts` | Mount task queue, clear locks on retry/cancel |
+| `apps/registry/src/__tests__/task-queue.test.ts` | NEW — 39 tests |
+| `packages/protocol/src/types.ts` | +CompleteTaskSchema, +CreateSubtaskSchema |
+| `packages/agent-daemon/src/registry-client.ts` | Use /complete endpoint with fallback |
+| `apps/dashboard/src/app/api/tasks/next/route.ts` | NEW — proxy |
+| `apps/dashboard/src/app/api/tasks/[id]/complete/route.ts` | NEW — proxy |
+| `apps/dashboard/src/app/api/tasks/[id]/subtasks/route.ts` | NEW — proxy |
+
+### Commits
+- `9c6b58b` — feat(registry): task queue with SELECT FOR UPDATE SKIP LOCKED (#55)
+
+### Next
+- #50 (Dashboard) — UI for task queue (task tree view, real-time status)
+- #72 (Task Cancellation) — cancel running/locked tasks via agent notification
+- #68 (Task Progress) — real-time progress tracking during task execution
+
+---
+
 ## 2026-02-10 — Issue #54: Protocol — Agent Telemetry
 
 ### Summary
