@@ -363,6 +363,106 @@ export const TaskProgressSchema = z.object({
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;
 
 // =============================================================================
+// AGENT CONFIG — Base + Role + Instance Config Schemas
+// =============================================================================
+
+/**
+ * Base config shared by all agents (agents/_base/config.json).
+ * Defines operational parameters like heartbeat, telemetry, and task execution.
+ */
+export const AgentBaseConfigSchema = z.object({
+  heartbeatInterval: z.number().int().min(1000).default(30000),
+  telemetryInterval: z.number().int().min(1000).default(60000),
+  logBatchInterval: z.number().int().min(1000).default(300000),
+  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  taskTimeout: z.number().int().min(1000).default(600000),
+  maxRetries: z.number().int().min(0).default(3),
+});
+export type AgentBaseConfig = z.infer<typeof AgentBaseConfigSchema>;
+
+/**
+ * Role-specific config (agents/<role>/config.json).
+ * Overrides base config values and adds role-specific parameters.
+ */
+export const AgentRoleConfigSchema = z.object({
+  model: z.string().min(1),
+  maxTokens: z.number().int().min(1).default(4096),
+  temperature: z.number().min(0).max(2).default(0.7),
+  timeout: z.number().int().min(1000).optional(),
+});
+export type AgentRoleConfig = z.infer<typeof AgentRoleConfigSchema>;
+
+/**
+ * Tool definition for a role (agents/<role>/tools.json).
+ */
+export const AgentToolSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  enabled: z.boolean().default(true),
+});
+export type AgentTool = z.infer<typeof AgentToolSchema>;
+
+export const AgentToolsConfigSchema = z.object({
+  tools: z.array(AgentToolSchema),
+});
+export type AgentToolsConfig = z.infer<typeof AgentToolsConfigSchema>;
+
+/**
+ * Instance overrides applied at deploy time (from Dashboard).
+ * All fields optional — only provided values override role/base config.
+ */
+export const AgentInstanceOverridesSchema = z.object({
+  model: z.string().min(1).optional(),
+  maxTokens: z.number().int().min(1).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  timeout: z.number().int().min(1000).optional(),
+  heartbeatInterval: z.number().int().min(1000).optional(),
+  telemetryInterval: z.number().int().min(1000).optional(),
+  logLevel: z.enum(["debug", "info", "warn", "error"]).optional(),
+  taskTimeout: z.number().int().min(1000).optional(),
+  maxRetries: z.number().int().min(0).optional(),
+});
+export type AgentInstanceOverrides = z.infer<typeof AgentInstanceOverridesSchema>;
+
+/**
+ * Merged config — the final resolved configuration for an agent instance.
+ * Result of: base + role + instance overrides.
+ */
+export const AgentMergedConfigSchema = z.object({
+  // From base
+  heartbeatInterval: z.number().int(),
+  telemetryInterval: z.number().int(),
+  logBatchInterval: z.number().int(),
+  logLevel: z.enum(["debug", "info", "warn", "error"]),
+  taskTimeout: z.number().int(),
+  maxRetries: z.number().int(),
+  // From role (+ possible instance override)
+  model: z.string(),
+  maxTokens: z.number().int(),
+  temperature: z.number(),
+  timeout: z.number().int().optional(),
+});
+export type AgentMergedConfig = z.infer<typeof AgentMergedConfigSchema>;
+
+/**
+ * Complete role file bundle — all files that define a role's behavior.
+ * Used by the Bootstrapper to configure an agent VM.
+ */
+export const AgentRoleFilesSchema = z.object({
+  /** SOUL.md content — personality and instructions */
+  soulMd: z.string().min(1),
+  /** AGENTS.md content — shared behavioral rules */
+  agentsMd: z.string().min(1),
+  /** TOOLS.md content — shared tool documentation */
+  toolsMd: z.string().min(1),
+  /** Merged config as JSON string */
+  configJson: z.string().min(1),
+  /** Role tools as JSON string */
+  toolsJson: z.string().optional(),
+});
+export type AgentRoleFiles = z.infer<typeof AgentRoleFilesSchema>;
+
+// =============================================================================
 // P2P MESSAGES
 // =============================================================================
 
