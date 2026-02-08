@@ -1,5 +1,67 @@
 # HiveMI Development Journal
 
+## 2026-02-10 — Issue #52: Protocol — Agent Registration in Registry
+
+### Summary
+Implemented the agent registration protocol: a single `POST /api/agents` endpoint that handles upsert (create or update). When an agent daemon boots, it announces itself with identity, role/team binding, capabilities, and cloud info. If the agent ID already exists (redeploy), the record is updated instead of duplicated.
+
+### Done
+- **RegisterAgentSchema** (`packages/protocol/src/types.ts`):
+  - Full Zod schema for daemon registration payload
+  - Fields: `id` (UUID), `name`, `roleId`, `teamId`, `model`, `host`, `port`, `version`, `openclawVersion`, `cloud` (provider/region/instanceId), `capabilities` (string[])
+  - `version`, `openclawVersion`, `cloud` are optional; `capabilities` defaults to `[]`
+
+- **Agent Registration Route** (`apps/registry/src/routes/agents.ts`):
+  - `POST /api/agents` — upsert with Zod validation
+  - Validates `roleId` exists in `roles` table (400 if not)
+  - Validates `teamId` exists in `teams` table (400 if not)
+  - Checks if agent with given `id` already exists:
+    - Exists → UPDATE (status=idle, lastHeartbeat=now) → returns 200
+    - New → INSERT → returns 201
+  - Detailed validation error response with field-level errors
+
+- **Daemon Registry Client Update** (`packages/agent-daemon/src/registry-client.ts`):
+  - Simplified `register()` from PUT-then-POST fallback to single POST upsert
+  - Cleaner error handling, status-aware logging (created vs updated)
+
+- **17 unit tests** (`apps/registry/src/__tests__/agent-registration.test.ts`):
+  - Validation: missing fields, invalid UUID, port out of range, empty name, missing model
+  - Role/team validation: 400 when roleId or teamId doesn't exist
+  - Create flow: new agent → 201, minimal payload → 201
+  - Update flow: existing agent → 200, insert not called
+  - Schema unit tests: full payload, defaults, missing id, invalid cloud, optional fields, length limits
+
+- **Daemon test update** — updated RegistryClient tests to match new single-POST behavior
+
+### Key Decisions
+- **Single POST for upsert** — the daemon sends one POST with its full identity. The registry checks existence by ID and decides create vs update. Simpler than the old PUT-then-POST-on-404 pattern.
+- **Role/team validation before insert** — prevents orphaned agents with invalid foreign keys. Returns 400 with clear message instead of a 500 from a DB constraint violation.
+- **Modular route file** — `routes/agents.ts` mounted on `/api/agents` in main routes, keeping the codebase organized as routes grow.
+- **Status set to "idle" on registration** — both create and update set the agent to idle, since registration means the daemon is alive and ready for tasks.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | +RegisterAgentSchema |
+| `apps/registry/src/routes/agents.ts` | NEW — registration route |
+| `apps/registry/src/routes.ts` | Mount agent registration, remove old POST handler |
+| `apps/registry/src/__tests__/agent-registration.test.ts` | NEW — 17 tests |
+| `apps/registry/vitest.config.ts` | NEW — vitest config |
+| `apps/registry/package.json` | +vitest dev dep, +test scripts |
+| `apps/registry/tsconfig.json` | Exclude __tests__ from build |
+| `packages/agent-daemon/src/registry-client.ts` | Simplified register() |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Updated registration tests |
+| `packages/protocol/tsconfig.json` | Exclude __tests__ from build |
+
+### Commits
+- `627166c` — feat(registry): agent registration endpoint with upsert and validation
+
+### Next
+- #55 (Task Queue) — server-side `SELECT FOR UPDATE SKIP LOCKED` for atomic task claiming
+- #50 (Dashboard) — UI for agent management and deploy progress
+
+---
+
 ## 2026-02-09 — Issue #49: Deploy Orchestrator — Full Deploy Flow via Manager
 
 ### Summary
