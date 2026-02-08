@@ -4,8 +4,24 @@ import { z } from "zod";
 // AGENT
 // =============================================================================
 
-export const AgentStatusSchema = z.enum(["online", "offline", "working", "idle", "error"]);
+// Updated: +provisioning, +unreachable, +destroyed, -online
+export const AgentStatusSchema = z.enum([
+  "provisioning",
+  "idle",
+  "working",
+  "offline",
+  "unreachable",
+  "error",
+  "destroyed",
+]);
 export type AgentStatus = z.infer<typeof AgentStatusSchema>;
+
+export const AgentCloudSchema = z.object({
+  provider: z.string(),
+  region: z.string(),
+  instanceId: z.string(),
+}).nullable();
+export type AgentCloud = z.infer<typeof AgentCloudSchema>;
 
 export const AgentSchema = z.object({
   id: z.string().uuid(),
@@ -17,7 +33,14 @@ export const AgentSchema = z.object({
   host: z.string().url(),
   port: z.number().int().min(1).max(65535),
   currentTaskId: z.string().uuid().nullable(),
-  lastHeartbeat: z.coerce.date(),
+  lastHeartbeat: z.coerce.date().nullable(),
+  // New fields
+  version: z.string().max(20).nullable(),
+  openclawVersion: z.string().max(20).nullable(),
+  cloud: AgentCloudSchema.optional(),
+  capabilities: z.array(z.string()).default([]),
+  privateIp: z.string().max(45).nullable(),
+  deployId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -76,11 +99,26 @@ export type Team = z.infer<typeof TeamSchema>;
 // TASK
 // =============================================================================
 
-export const TaskStatusSchema = z.enum(["queued", "running", "completed", "failed", "cancelled"]);
+// Updated: +locked, +cancelling, -running
+export const TaskStatusSchema = z.enum([
+  "queued",
+  "locked",
+  "completed",
+  "failed",
+  "cancelling",
+  "cancelled",
+]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const TaskPrioritySchema = z.enum(["high", "medium", "low"]);
 export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
+
+export const TaskArtifactSchema = z.object({
+  type: z.string(),
+  url: z.string(),
+  description: z.string(),
+});
+export type TaskArtifact = z.infer<typeof TaskArtifactSchema>;
 
 export const TaskSchema = z.object({
   id: z.string().uuid(),
@@ -95,6 +133,12 @@ export const TaskSchema = z.object({
   error: z.string().nullable(),
   estimatedMs: z.number().int().nullable(),
   elapsedMs: z.number().int().nullable(),
+  // New fields
+  roleTarget: z.string().uuid().nullable(),
+  lockedBy: z.string().uuid().nullable(),
+  lockedAt: z.coerce.date().nullable(),
+  parentTaskId: z.string().uuid().nullable(),
+  artifacts: z.array(TaskArtifactSchema).default([]),
   createdAt: z.coerce.date(),
   startedAt: z.coerce.date().nullable(),
   completedAt: z.coerce.date().nullable(),
@@ -108,6 +152,8 @@ export const CreateTaskSchema = z.object({
   agentId: z.string().uuid().nullable().optional(),
   teamId: z.string().uuid(),
   input: z.string().nullable().optional(),
+  roleTarget: z.string().uuid().nullable().optional(),
+  parentTaskId: z.string().uuid().nullable().optional(),
 });
 export type CreateTask = z.infer<typeof CreateTaskSchema>;
 
@@ -115,7 +161,8 @@ export type CreateTask = z.infer<typeof CreateTaskSchema>;
 // LOG
 // =============================================================================
 
-export const LogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+// Updated: +lifecycle
+export const LogLevelSchema = z.enum(["debug", "info", "warn", "error", "lifecycle"]);
 export type LogLevel = z.infer<typeof LogLevelSchema>;
 
 export const LogEntrySchema = z.object({
@@ -127,8 +174,138 @@ export const LogEntrySchema = z.object({
   taskId: z.string().uuid().nullable(),
   message: z.string(),
   metadata: z.record(z.unknown()).nullable(),
+  // New field
+  component: z.string().max(50).nullable(),
 });
 export type LogEntry = z.infer<typeof LogEntrySchema>;
+
+// =============================================================================
+// DEPLOY
+// =============================================================================
+
+export const DeployStatusSchema = z.enum([
+  "provisioning",
+  "installing",
+  "configuring",
+  "registering",
+  "ready",
+  "failed",
+  "destroyed",
+]);
+export type DeployStatus = z.infer<typeof DeployStatusSchema>;
+
+export const InstanceSizeSchema = z.enum(["small", "medium", "large"]);
+export type InstanceSize = z.infer<typeof InstanceSizeSchema>;
+
+export const CloudProviderSchema = z.enum(["digitalocean", "gcp"]);
+export type CloudProvider = z.infer<typeof CloudProviderSchema>;
+
+export const DeployPhaseSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type DeployPhase = z.infer<typeof DeployPhaseSchema>;
+
+export const DeploySchema = z.object({
+  id: z.string().uuid(),
+  agentId: z.string().uuid().nullable(),
+  agentName: z.string().max(100),
+  cloudProvider: CloudProviderSchema,
+  region: z.string(),
+  instanceSize: InstanceSizeSchema,
+  instanceId: z.string().nullable(),
+  status: DeployStatusSchema,
+  phases: z.array(DeployPhaseSchema),
+  error: z.string().nullable(),
+  startedAt: z.coerce.date(),
+  completedAt: z.coerce.date().nullable(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+export type Deploy = z.infer<typeof DeploySchema>;
+
+export const CreateDeploySchema = z.object({
+  agentName: z.string().min(1).max(100),
+  cloudProvider: CloudProviderSchema,
+  region: z.string(),
+  instanceSize: InstanceSizeSchema,
+});
+export type CreateDeploy = z.infer<typeof CreateDeploySchema>;
+
+// =============================================================================
+// AGENT TELEMETRY
+// =============================================================================
+
+export const TelemetryInfraSchema = z.object({
+  cpu: z.number(),
+  memUsed: z.number(),
+  memTotal: z.number(),
+  diskUsed: z.number(),
+  diskTotal: z.number(),
+  loadAvg: z.array(z.number()),
+});
+export type TelemetryInfra = z.infer<typeof TelemetryInfraSchema>;
+
+export const TelemetryLlmSchema = z.object({
+  requests: z.number(),
+  promptTokens: z.number(),
+  completionTokens: z.number(),
+  errors: z.number(),
+  avgLatencyMs: z.number(),
+});
+export type TelemetryLlm = z.infer<typeof TelemetryLlmSchema>;
+
+export const TelemetryTasksSchema = z.object({
+  completed: z.number(),
+  failed: z.number(),
+  active: z.number(),
+});
+export type TelemetryTasks = z.infer<typeof TelemetryTasksSchema>;
+
+export const TelemetryDaemonSchema = z.object({
+  uptime: z.number(),
+  version: z.string(),
+  openclawStatus: z.string(),
+});
+export type TelemetryDaemon = z.infer<typeof TelemetryDaemonSchema>;
+
+export const AgentTelemetrySchema = z.object({
+  id: z.string().uuid(),
+  agentId: z.string().uuid(),
+  timestamp: z.coerce.date(),
+  infra: TelemetryInfraSchema.nullable(),
+  llm: TelemetryLlmSchema.nullable(),
+  tasks: TelemetryTasksSchema.nullable(),
+  daemon: TelemetryDaemonSchema.nullable(),
+});
+export type AgentTelemetry = z.infer<typeof AgentTelemetrySchema>;
+
+// =============================================================================
+// SETTINGS
+// =============================================================================
+
+export const SettingSchema = z.object({
+  key: z.string().max(100),
+  value: z.record(z.unknown()),
+  updatedAt: z.coerce.date(),
+});
+export type Setting = z.infer<typeof SettingSchema>;
+
+// =============================================================================
+// TASK PROGRESS
+// =============================================================================
+
+export const TaskProgressSchema = z.object({
+  id: z.string().uuid(),
+  taskId: z.string().uuid(),
+  step: z.string(),
+  toolCall: z.string().max(50).nullable(),
+  timestamp: z.coerce.date(),
+});
+export type TaskProgress = z.infer<typeof TaskProgressSchema>;
 
 // =============================================================================
 // P2P MESSAGES
