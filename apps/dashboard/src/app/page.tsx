@@ -76,9 +76,9 @@ export default function Home() {
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const rolesFetcher = useCallback(() => rolesApi.list(), []);
   
-  const { data: apiAgents, loading: agentsLoading, refetch: refetchAgents } = useApi(agentsFetcher, { refetchInterval: 5000 });
-  const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000 });
-  const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000 });
+  const { data: apiAgents, loading: agentsLoading, refetch: refetchAgents } = useApi(agentsFetcher, { refetchInterval: 5000, cacheKey: "agents" });
+  const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000, cacheKey: "teams" });
+  const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000, cacheKey: "roles" });
 
   const isLoading = agentsLoading || teamsLoading;
 

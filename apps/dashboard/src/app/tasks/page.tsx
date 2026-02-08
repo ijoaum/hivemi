@@ -15,8 +15,8 @@ export default function TasksPage() {
   const tasksFetcher = useCallback(() => tasksApi.list(), []);
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   
-  const { data: apiTasks, error: tasksError, refetch: refetchTasks } = useApi(tasksFetcher, { refetchInterval: 5000 });
-  const { data: apiTeams } = useApi(teamsFetcher);
+  const { data: apiTasks, error: tasksError, refetch: refetchTasks } = useApi(tasksFetcher, { refetchInterval: 5000, cacheKey: "tasks" });
+  const { data: apiTeams } = useApi(teamsFetcher, { cacheKey: "teams" });
 
   // Convert API tasks to display format
   const tasks = useMemo(() => {

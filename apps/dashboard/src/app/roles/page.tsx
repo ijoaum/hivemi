@@ -17,8 +17,8 @@ export default function RolesPage() {
   const rolesFetcher = useCallback(() => rolesApi.list(), []);
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
   
-  const { data: apiRoles, error: rolesError, refetch: refetchRoles } = useApi(rolesFetcher);
-  const { data: apiAgents } = useApi(agentsFetcher);
+  const { data: apiRoles, error: rolesError, refetch: refetchRoles } = useApi(rolesFetcher, { cacheKey: "roles" });
+  const { data: apiAgents } = useApi(agentsFetcher, { cacheKey: "agents" });
 
   // Convert API roles to display format
   const roles = useMemo(() => {

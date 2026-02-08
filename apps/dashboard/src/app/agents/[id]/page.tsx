@@ -58,9 +58,9 @@ export default function AgentDetailPage() {
   const tasksFetcher = useCallback(() => tasksApi.list(), []);
   const logsFetcher = useCallback(() => logsApi.list({ limit: 50 }), []);
 
-  const { data: agent, error: agentError, isLoading, refetch: refetchAgent } = useApi(agentFetcher, { refetchInterval: 5000 });
-  const { data: allTasks } = useApi(tasksFetcher, { refetchInterval: 5000 });
-  const { data: allLogs } = useApi(logsFetcher, { refetchInterval: 5000 });
+  const { data: agent, error: agentError, isLoading, refetch: refetchAgent } = useApi(agentFetcher, { refetchInterval: 5000, cacheKey: `agent-${agentId}` });
+  const { data: allTasks } = useApi(tasksFetcher, { refetchInterval: 5000, cacheKey: "tasks" });
+  const { data: allLogs } = useApi(logsFetcher, { refetchInterval: 5000, cacheKey: "logs" });
 
   const role = useMemo(() => agent?.role || null, [agent]);
   const team = useMemo(() => agent?.team || null, [agent]);

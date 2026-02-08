@@ -2,16 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
+// Global cache for API responses - persists across page navigations
+const apiCache = new Map<string, { data: unknown; timestamp: number }>();
+const CACHE_TTL = 10000; // 10 seconds
+
 interface UseApiOptions<T> {
   initialData?: T;
   refetchInterval?: number;
+  cacheKey?: string;
 }
 
 interface UseApiResult<T> {
   data: T | undefined;
   error: Error | null;
   isLoading: boolean;
-  loading: boolean; // alias for isLoading - only true on first load
+  loading: boolean;
   refetch: () => Promise<void>;
 }
 
@@ -19,14 +24,19 @@ export function useApi<T>(
   fetcher: () => Promise<T>,
   options: UseApiOptions<T> = {}
 ): UseApiResult<T> {
-  const [data, setData] = useState<T | undefined>(options.initialData);
+  // Check cache for initial data
+  const cachedEntry = options.cacheKey ? apiCache.get(options.cacheKey) : null;
+  const cachedData = cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL) 
+    ? cachedEntry.data as T 
+    : undefined;
+
+  const [data, setData] = useState<T | undefined>(options.initialData ?? cachedData);
   const [error, setError] = useState<Error | null>(null);
-  const [isLoading, setIsLoading] = useState(!options.initialData);
-  const hasFetchedOnce = useRef(false);
+  const [isLoading, setIsLoading] = useState(!options.initialData && !cachedData);
+  const hasFetchedOnce = useRef(!!cachedData);
 
   const refetch = useCallback(async () => {
     try {
-      // Only show loading on first fetch
       if (!hasFetchedOnce.current) {
         setIsLoading(true);
       }
@@ -34,12 +44,17 @@ export function useApi<T>(
       const result = await fetcher();
       setData(result);
       hasFetchedOnce.current = true;
+      
+      // Update cache
+      if (options.cacheKey) {
+        apiCache.set(options.cacheKey, { data: result, timestamp: Date.now() });
+      }
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Unknown error"));
     } finally {
       setIsLoading(false);
     }
-  }, [fetcher]);
+  }, [fetcher, options.cacheKey]);
 
   useEffect(() => {
     refetch();

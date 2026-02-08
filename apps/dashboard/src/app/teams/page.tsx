@@ -17,8 +17,8 @@ export default function TeamsPage() {
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
 
-  const { data: apiTeams, error: teamsError, refetch: refetchTeams } = useApi(teamsFetcher);
-  const { data: apiAgents } = useApi(agentsFetcher);
+  const { data: apiTeams, error: teamsError, refetch: refetchTeams } = useApi(teamsFetcher, { cacheKey: "teams" });
+  const { data: apiAgents } = useApi(agentsFetcher, { cacheKey: "agents" });
 
   // Build teams with agent counts
   const teams = useMemo(() => {
