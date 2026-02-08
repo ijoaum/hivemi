@@ -351,4 +351,16 @@ export { RegistryClient } from "./registry-client.js";
 export { OpenClawClient } from "./openclaw-client.js";
 export { TaskPoller } from "./task-poller.js";
 export { TelemetryCollector } from "./telemetry.js";
+export { P2PClient, P2PError } from "./p2p-client.js";
+export { P2PHandler } from "./p2p-handler.js";
+export type {
+  P2PMessage,
+  P2PMessageAck,
+  P2PMessageType,
+  AgentEndpoint,
+  P2PRetryConfig,
+  P2PSendOptions,
+  P2PErrorCode,
+} from "./p2p-client.js";
+export type { P2PMessageCallback, P2PHandlerConfig } from "./p2p-handler.js";
 export * from "./types.js";

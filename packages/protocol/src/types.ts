@@ -629,30 +629,182 @@ export const HeartbeatResponseSchema = z.object({
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponseSchema>;
 
 // =============================================================================
-// P2P MESSAGES
+// P2P MESSAGES — Issue #56: Agent-to-Agent Communication (Future)
+//
+// Direct messaging between agents for advanced scenarios like brainstorming,
+// synchronous code review, and collaborative problem-solving. Primary
+// communication still happens via the task queue (#55), but P2P enables
+// low-latency agent interactions without registry round-trips.
+//
+// Discovery: GET /api/agents/:id/endpoint → { host, port, status }
+// Messaging: POST http://<agent-host>:<port>/message
+// Retry: Exponential backoff (1s, 3s, 9s) — 3 attempts max
 // =============================================================================
 
-export const MessageTypeSchema = z.enum([
-  "task:assign",
-  "task:progress",
-  "task:complete",
-  "task:failed",
-  "agent:ping",
-  "agent:pong",
-  "agent:request",
-  "agent:response",
+/**
+ * P2P message types:
+ * - request/response: Synchronous request-response pattern (code review, questions)
+ * - delegate: Fire-and-forget delegation of work
+ * - ping/pong: Liveness check between agents (bypasses registry)
+ */
+export const P2PMessageTypeSchema = z.enum([
+  "request",
+  "response",
+  "delegate",
+  "ping",
+  "pong",
 ]);
-export type MessageType = z.infer<typeof MessageTypeSchema>;
+export type P2PMessageType = z.infer<typeof P2PMessageTypeSchema>;
 
+/**
+ * Schema for POST http://<agent>/message — the P2P message envelope.
+ *
+ * Every P2P message follows this structure. The `payload` field is
+ * type-dependent (see P2PRequestPayloadSchema, etc.).
+ */
 export const P2PMessageSchema = z.object({
+  /** Unique message ID (UUID v4) — used for correlation */
   id: z.string().uuid(),
-  type: MessageTypeSchema,
+  /** Message type */
+  type: P2PMessageTypeSchema,
+  /** Sender agent ID */
   from: z.string().uuid(),
+  /** Recipient agent ID */
   to: z.string().uuid(),
+  /** Type-specific payload */
   payload: z.unknown(),
-  timestamp: z.coerce.date(),
+  /** ISO 8601 timestamp from sender */
+  timestamp: z.string().datetime(),
+  /** Optional: correlation ID linking response to request */
+  correlationId: z.string().uuid().optional(),
+  /** Optional: TTL in milliseconds — receiver should discard if expired */
+  ttlMs: z.number().int().positive().optional(),
 });
 export type P2PMessage = z.infer<typeof P2PMessageSchema>;
+
+/**
+ * Payload for "request" messages — synchronous request expecting a response.
+ * Used for: code review requests, questions between agents, brainstorming prompts.
+ */
+export const P2PRequestPayloadSchema = z.object({
+  /** What the requesting agent wants (e.g. "review this PR", "answer this question") */
+  action: z.string().min(1).max(100),
+  /** Context/content for the request */
+  content: z.string(),
+  /** Optional task ID this request relates to */
+  taskId: z.string().uuid().optional(),
+  /** Optional metadata */
+  metadata: z.record(z.unknown()).optional(),
+});
+export type P2PRequestPayload = z.infer<typeof P2PRequestPayloadSchema>;
+
+/**
+ * Payload for "response" messages — reply to a request.
+ * Always carries a correlationId linking to the original request.
+ */
+export const P2PResponsePayloadSchema = z.object({
+  /** Whether the request was handled successfully */
+  success: z.boolean(),
+  /** Response content */
+  content: z.string().optional(),
+  /** Error message if success=false */
+  error: z.string().optional(),
+  /** Optional metadata */
+  metadata: z.record(z.unknown()).optional(),
+});
+export type P2PResponsePayload = z.infer<typeof P2PResponsePayloadSchema>;
+
+/**
+ * Payload for "delegate" messages — fire-and-forget task delegation.
+ * Unlike task queue subtasks, delegates are informal suggestions
+ * that the receiving agent may or may not act on.
+ */
+export const P2PDelegatePayloadSchema = z.object({
+  /** What should be done */
+  action: z.string().min(1).max(100),
+  /** Context/instructions */
+  content: z.string(),
+  /** Priority hint */
+  priority: TaskPrioritySchema.optional(),
+  /** Optional task ID this delegation relates to */
+  taskId: z.string().uuid().optional(),
+});
+export type P2PDelegatePayload = z.infer<typeof P2PDelegatePayloadSchema>;
+
+/**
+ * Payload for "ping" messages — liveness probe.
+ * The receiver should respond with a "pong" message.
+ */
+export const P2PPingPayloadSchema = z.object({
+  /** Sender's current status */
+  status: z.enum(["idle", "working", "error"]).optional(),
+});
+export type P2PPingPayload = z.infer<typeof P2PPingPayloadSchema>;
+
+/**
+ * Payload for "pong" messages — ping response.
+ */
+export const P2PPongPayloadSchema = z.object({
+  /** Responder's current status */
+  status: z.enum(["idle", "working", "error"]),
+  /** Responder's uptime in ms */
+  uptimeMs: z.number().int().nonnegative().optional(),
+});
+export type P2PPongPayload = z.infer<typeof P2PPongPayloadSchema>;
+
+/**
+ * Response from POST http://<agent>/message — acknowledgment.
+ */
+export const P2PMessageAckSchema = z.object({
+  /** Whether the message was accepted for processing */
+  accepted: z.boolean(),
+  /** Error message if not accepted */
+  error: z.string().optional(),
+  /** Optional immediate response (for ping → pong) */
+  response: P2PMessageSchema.optional(),
+});
+export type P2PMessageAck = z.infer<typeof P2PMessageAckSchema>;
+
+/**
+ * Agent endpoint info returned by GET /api/agents/:id/endpoint.
+ * Used for P2P discovery — the sender resolves the target agent's
+ * host and port via the registry before sending a direct message.
+ */
+export const AgentEndpointSchema = z.object({
+  /** Agent UUID */
+  id: z.string().uuid(),
+  /** Agent name */
+  name: z.string(),
+  /** Public or private IP / hostname */
+  host: z.string(),
+  /** Daemon port */
+  port: z.number().int().min(1).max(65535),
+  /** Current agent status */
+  status: z.enum(["idle", "working", "error", "offline", "unreachable", "provisioning", "destroyed"]),
+  /** Private VPC IP (preferred for same-network communication) */
+  privateIp: z.string().nullable().optional(),
+});
+export type AgentEndpoint = z.infer<typeof AgentEndpointSchema>;
+
+/**
+ * P2P retry configuration — exponential backoff with 3× multiplier.
+ * Default delays: 1s, 3s, 9s.
+ */
+export const P2PRetryConfigSchema = z.object({
+  /** Maximum number of retry attempts (default: 3) */
+  maxRetries: z.number().int().min(0).max(10).default(3),
+  /** Initial delay in ms (default: 1000) */
+  initialDelayMs: z.number().int().min(100).max(30000).default(1000),
+  /** Backoff multiplier (default: 3) */
+  multiplier: z.number().min(1).max(10).default(3),
+  /** Maximum delay in ms (default: 30000) */
+  maxDelayMs: z.number().int().min(1000).max(60000).default(30000),
+});
+export type P2PRetryConfig = z.infer<typeof P2PRetryConfigSchema>;
+
+// Legacy aliases for backward compat
+export const MessageTypeSchema = P2PMessageTypeSchema;
+export type MessageType = P2PMessageType;
 
 // =============================================================================
 // API RESPONSES

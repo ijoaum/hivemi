@@ -15,6 +15,7 @@ import cloudSettings from "./routes/cloud-settings.js";
 import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
 import taskQueueRoutes from "./routes/tasks.js";
+import discoveryRoutes from "./routes/discovery.js";
 
 const app = new Hono();
 
@@ -140,6 +141,9 @@ app.route("/api/agents", agentRegistration);
 
 // Agent heartbeat (POST /api/agents/:id/heartbeat) — liveness + status
 app.route("/api/agents", heartbeatRoutes);
+
+// Agent discovery (GET /api/agents/:id/endpoint, GET /api/agents/endpoints) — P2P
+app.route("/api/agents", discoveryRoutes);
 
 app.get("/api/agents", async (c) => {
   try {
