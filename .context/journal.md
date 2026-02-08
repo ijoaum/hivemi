@@ -1,5 +1,82 @@
 # HiveMI Development Journal
 
+## 2026-02-10 — Issue #53: Protocol — Heartbeat & Offline Detection
+
+### Summary
+Implemented the heartbeat protocol between daemon and registry, plus an offline detection job that automatically marks agents as offline/unreachable when heartbeats stop.
+
+### Done
+- **HeartbeatPayloadSchema** (`packages/protocol/src/types.ts`):
+  - `status` — "idle" | "working" | "error"
+  - `currentTaskId` — UUID or null
+  - `timestamp` — ISO 8601 datetime
+  - `HeartbeatResponseSchema` — `{ ack: boolean }`
+
+- **Heartbeat Route** (`apps/registry/src/routes/heartbeat.ts`):
+  - `POST /api/agents/:id/heartbeat` — validates payload with Zod
+  - Updates agent's `lastHeartbeat`, `status`, and `currentTaskId`
+  - Returns `{ ack: true }` on 200
+  - Returns 404 when agent not found (daemon should re-register)
+  - Replaces the old inline heartbeat handler (which just set status to "idle")
+
+- **Offline Detection Job** (`apps/registry/src/lib/offline-detection.ts`):
+  - Runs every 30 seconds via `setInterval`
+  - Phase 1: Agents >5min without heartbeat → "unreachable" (runs first to avoid re-marking)
+  - Phase 2: Agents >90s without heartbeat → "offline"
+  - Excludes agents in "provisioning", "destroyed" statuses
+  - Agents are NOT deleted — remain in registry for Dashboard visibility
+  - Auto-recovery: when heartbeat resumes, the heartbeat endpoint sets the agent's status back
+  - Started automatically when registry server boots (`index.ts`)
+
+- **Daemon Heartbeat Update** (`packages/agent-daemon/src/registry-client.ts`):
+  - `heartbeat()` now sends `{ status, currentTaskId, timestamp }` payload
+  - Returns `boolean`: `true` = ack, `false` = 404 (need re-register)
+  - Server errors return `true` (don't trigger unnecessary re-registration)
+
+- **Daemon 404 Recovery** (`packages/agent-daemon/src/index.ts`):
+  - Heartbeat loop checks return value
+  - On `false` (404): automatically calls `register()` to re-announce
+  - Logs lifecycle events for re-registration attempts
+  - Sends current task status in every heartbeat (idle vs working + task ID)
+
+- **23 new tests** (15 heartbeat endpoint + 8 offline detection), all passing
+  - Heartbeat: valid payloads, validation errors, 404 handling, status updates
+  - Offline detection: stale marking, logging, DB error handling, lifecycle
+  - Daemon: heartbeat with payload, 404 re-register, server error handling
+
+- **Updated 3 daemon tests** to match new heartbeat signature
+
+### Key Decisions
+- **Status-aware heartbeat** — the old endpoint blindly set status to "idle". The new one accepts the daemon's actual status (idle/working/error) so the registry always reflects reality.
+- **Unreachable before offline** — the detection job checks 5min threshold first, then 90s. This prevents agents that should be "unreachable" from being re-marked as "offline" on the next cycle.
+- **404 = re-register** — if an agent is removed from the registry (manual deletion, data loss), the daemon detects this via 404 and re-announces itself automatically.
+- **Server errors don't trigger re-register** — a 500 from the registry doesn't mean the agent was removed, so we return `true` to avoid unnecessary re-registration spam.
+- **Separate route file** — heartbeat route is in its own file (`routes/heartbeat.ts`) for maintainability, mounted alongside the agent registration route.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | +HeartbeatPayloadSchema, +HeartbeatResponseSchema |
+| `apps/registry/src/routes/heartbeat.ts` | NEW — heartbeat endpoint |
+| `apps/registry/src/lib/offline-detection.ts` | NEW — offline detection job |
+| `apps/registry/src/routes.ts` | Mount heartbeat route, remove old inline handler |
+| `apps/registry/src/index.ts` | Start offline detection on boot |
+| `apps/registry/src/__tests__/heartbeat.test.ts` | NEW — 15 tests |
+| `apps/registry/src/__tests__/offline-detection.test.ts` | NEW — 8 tests |
+| `packages/agent-daemon/src/types.ts` | Updated IRegistryClient.heartbeat signature |
+| `packages/agent-daemon/src/registry-client.ts` | Heartbeat with payload + 404 handling |
+| `packages/agent-daemon/src/index.ts` | Heartbeat loop with re-registration on 404 |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Updated heartbeat tests |
+
+### Commits
+- `d4295d9` — feat(protocol): heartbeat payload schema and offline detection
+
+### Next
+- #55 (Task Queue) — server-side `SELECT FOR UPDATE SKIP LOCKED` for atomic task claiming
+- #50 (Dashboard) — UI for agent status (show offline/unreachable indicators)
+
+---
+
 ## 2026-02-10 — Issue #52: Protocol — Agent Registration in Registry
 
 ### Summary
