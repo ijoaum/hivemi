@@ -5,10 +5,11 @@ import { db, agents, roles, teams, tasks, logs } from "./db/index.js";
 import { eq, desc } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 import { 
-  CreateAgentSchema, 
   CreateRoleSchema, 
-  CreateTaskSchema 
+  CreateTaskSchema,
+  authMiddleware, 
 } from "@hivemi/protocol";
+import agentRegistration from "./routes/agents.js";
 import cloudSettings from "./routes/cloud-settings.js";
 import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
@@ -18,6 +19,10 @@ const app = new Hono();
 // Middleware
 app.use("*", cors());
 app.use("*", honoLogger());
+
+// HIVEMI_SECRET auth — validates Bearer token on all /api/* routes.
+// Skips /health for load balancer probes. In dev (no HIVEMI_SECRET), allows all.
+app.use("/api/*", authMiddleware);
 
 // =============================================================================
 // HEALTH
@@ -128,6 +133,9 @@ app.delete("/api/roles/:id", async (c) => {
 // AGENTS
 // =============================================================================
 
+// Agent registration (POST /api/agents) — upsert with validation
+app.route("/api/agents", agentRegistration);
+
 app.get("/api/agents", async (c) => {
   try {
     const result = await db
@@ -214,19 +222,6 @@ app.get("/api/agents/:id", async (c) => {
   } catch (error) {
     logger.error(error, "Failed to fetch agent");
     return c.json({ success: false, error: "Failed to fetch agent" }, 500);
-  }
-});
-
-app.post("/api/agents", async (c) => {
-  try {
-    const body = await c.req.json();
-    const parsed = CreateAgentSchema.parse(body);
-    const result = await db.insert(agents).values(parsed).returning();
-    logger.info({ agent: result[0] }, "Agent created");
-    return c.json({ success: true, data: result[0] }, 201);
-  } catch (error) {
-    logger.error(error, "Failed to create agent");
-    return c.json({ success: false, error: "Failed to create agent" }, 500);
   }
 });
 

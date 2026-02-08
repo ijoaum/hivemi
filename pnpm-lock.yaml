@@ -237,6 +237,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.9)(lightningcss@1.30.2)
 
   packages/agent-daemon:
     dependencies:
@@ -360,6 +363,9 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.9)(lightningcss@1.30.2)
 
   packages/provisioner:
     dependencies:

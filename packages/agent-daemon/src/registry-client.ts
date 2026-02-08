@@ -4,6 +4,7 @@
 // Handles registration, heartbeat, task polling, telemetry, and log shipping.
 // =============================================================================
 
+import { networkInterfaces } from "node:os";
 import type {
   DaemonConfig,
   DaemonLogger,
@@ -13,6 +14,33 @@ import type {
   TaskResult,
   TelemetrySnapshot,
 } from "./types.js";
+
+/**
+ * Detect the private VPC IP address.
+ * Looks for a 10.x.x.x, 172.16-31.x.x, or 192.168.x.x IPv4 address
+ * on a non-loopback interface. Returns null if none found.
+ */
+function detectPrivateIp(): string | null {
+  const ifaces = networkInterfaces();
+  for (const [, addrs] of Object.entries(ifaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family !== "IPv4" || addr.internal) continue;
+      // Match RFC1918 private ranges
+      if (
+        addr.address.startsWith("10.") ||
+        addr.address.startsWith("172.16.") || addr.address.startsWith("172.17.") ||
+        addr.address.startsWith("172.18.") || addr.address.startsWith("172.19.") ||
+        addr.address.startsWith("172.2") || addr.address.startsWith("172.30.") ||
+        addr.address.startsWith("172.31.") ||
+        addr.address.startsWith("192.168.")
+      ) {
+        return addr.address;
+      }
+    }
+  }
+  return null;
+}
 
 export class RegistryClient implements IRegistryClient {
   private readonly baseUrl: string;
@@ -58,48 +86,39 @@ export class RegistryClient implements IRegistryClient {
 
   // -------------------------------------------------------------------------
   // Registration — POST /api/agents (upsert)
+  // Single POST call: creates if new, updates if ID already exists.
   // -------------------------------------------------------------------------
 
   async register(): Promise<void> {
     this.logger.info("Registering with registry", { agentId: this.agentId });
 
-    // Try PUT first (update existing agent)
-    const putRes = await this.request("PUT", `/api/agents/${this.agentId}`, {
+    // Detect private VPC IP for internal communication
+    const privateIp = detectPrivateIp();
+    if (privateIp) {
+      this.logger.info(`Detected private IP: ${privateIp}`);
+    } else {
+      this.logger.warn("No private IP detected — agent will use public IP for communication");
+    }
+
+    const res = await this.request("POST", "/api/agents", {
+      id: this.agentId,
       name: this.config.agentName,
-      status: "idle",
+      roleId: this.config.roleId,
+      teamId: this.config.teamId,
       model: this.config.model,
-      lastHeartbeat: new Date().toISOString(),
+      host: privateIp || "0.0.0.0",
+      port: this.config.daemonPort,
+      ...(privateIp ? { privateIp } : {}),
     });
 
-    if (putRes.ok) {
-      this.logger.info("Registered (updated existing agent)");
+    if (res.ok) {
+      const status = res.status === 201 ? "created" : "updated";
+      this.logger.info(`Registered (${status} agent)`);
       return;
     }
 
-    // If PUT 404, try POST to create
-    if (putRes.status === 404) {
-      const postRes = await this.request("POST", "/api/agents", {
-        id: this.agentId,
-        name: this.config.agentName,
-        roleId: this.config.roleId,
-        teamId: this.config.teamId,
-        status: "idle",
-        model: this.config.model,
-        host: "0.0.0.0",
-        port: this.config.daemonPort,
-      });
-
-      if (!postRes.ok) {
-        const text = await postRes.text();
-        throw new Error(`Registration failed (POST): ${postRes.status} ${text}`);
-      }
-
-      this.logger.info("Registered (created new agent)");
-      return;
-    }
-
-    const text = await putRes.text();
-    throw new Error(`Registration failed (PUT): ${putRes.status} ${text}`);
+    const text = await res.text();
+    throw new Error(`Registration failed: ${res.status} ${text}`);
   }
 
   // -------------------------------------------------------------------------

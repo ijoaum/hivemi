@@ -56,6 +56,41 @@ export const CreateAgentSchema = AgentSchema.pick({
 });
 export type CreateAgent = z.infer<typeof CreateAgentSchema>;
 
+/**
+ * Schema for POST /api/agents — daemon registration (upsert).
+ * The daemon announces itself with full identity and capability info.
+ * If the agent ID already exists, it updates instead of duplicating.
+ */
+export const RegisterAgentSchema = z.object({
+  /** UUID generated at bootstrap — fixed for the agent's lifetime */
+  id: z.string().uuid(),
+  /** Human-readable agent name */
+  name: z.string().min(1).max(100),
+  /** Role binding */
+  roleId: z.string().uuid(),
+  /** Team binding */
+  teamId: z.string().uuid(),
+  /** LLM model in use */
+  model: z.string().min(1),
+  /** Public IP / hostname of the VM */
+  host: z.string().min(1).max(255),
+  /** Daemon port */
+  port: z.number().int().min(1).max(65535),
+  /** Daemon version */
+  version: z.string().max(20).optional(),
+  /** OpenClaw version installed on the VM */
+  openclawVersion: z.string().max(20).optional(),
+  /** Cloud provider info */
+  cloud: z.object({
+    provider: z.string(),
+    region: z.string(),
+    instanceId: z.string(),
+  }).optional(),
+  /** List of enabled skills/tools */
+  capabilities: z.array(z.string()).default([]),
+});
+export type RegisterAgent = z.infer<typeof RegisterAgentSchema>;
+
 // =============================================================================
 // ROLE
 // =============================================================================

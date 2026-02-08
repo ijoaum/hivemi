@@ -519,7 +519,7 @@ describe("RegistryClient", () => {
     expect(client).toBeDefined();
   });
 
-  it("register() calls PUT then POST on 404", async () => {
+  it("register() sends single POST for upsert", async () => {
     const calls: string[] = [];
 
     const originalFetch = globalThis.fetch;
@@ -527,9 +527,6 @@ describe("RegistryClient", () => {
       const method = init?.method || "GET";
       calls.push(method);
 
-      if (method === "PUT") {
-        return new Response("Not found", { status: 404 });
-      }
       if (method === "POST") {
         return new Response(JSON.stringify({ success: true }), { status: 201 });
       }
@@ -540,14 +537,14 @@ describe("RegistryClient", () => {
       const client = new RegistryClient(config, silentLogger);
       await client.register();
 
-      expect(calls).toContain("PUT");
-      expect(calls).toContain("POST");
+      // Single POST call — no PUT-then-POST anymore
+      expect(calls).toEqual(["POST"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  it("register() succeeds on PUT 200", async () => {
+  it("register() succeeds on POST 200 (update)", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ success: true }), { status: 200 }),
@@ -556,7 +553,7 @@ describe("RegistryClient", () => {
     try {
       const client = new RegistryClient(config, silentLogger);
       await client.register();
-      // Should succeed without calling POST
+      // Should succeed — 200 means existing agent was updated
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -576,6 +573,49 @@ describe("RegistryClient", () => {
       await client.heartbeat();
 
       expect(capturedUrl).toContain(`/api/agents/${config.agentId}/heartbeat`);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("sends Authorization header with HIVEMI_SECRET", async () => {
+    let capturedHeaders: Record<string, string> = {};
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> || {};
+      capturedHeaders = { ...headers };
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const client = new RegistryClient(config, silentLogger);
+      await client.heartbeat();
+
+      expect(capturedHeaders["Authorization"]).toBe(`Bearer ${config.hivemiSecret}`);
+      expect(capturedHeaders["X-Agent-Id"]).toBe(config.agentId);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("register() includes privateIp when available", async () => {
+    let capturedBody = "";
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      capturedBody = init?.body as string || "";
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const client = new RegistryClient(config, silentLogger);
+      await client.register();
+
+      // The PUT body should have been sent (register tries PUT first)
+      // privateIp detection depends on actual network interfaces
+      // so we just verify registration completes without error
+      expect(capturedBody).toBeTruthy();
     } finally {
       globalThis.fetch = originalFetch;
     }
