@@ -44,9 +44,12 @@ export {
   configureOpenClaw,
   copyRoleConfig,
   installDaemon,
+  verifyInstallation,
   configure,
 } from "./phases/configure.js";
+export type { VerifyResult } from "./phases/configure.js";
 export { waitRegistration } from "./phases/wait-registration.js";
+export { loadRoleConfig, deepMerge } from "./role-loader.js";
 
 // ---------------------------------------------------------------------------
 // Main orchestrator
@@ -78,6 +81,7 @@ function createPhases(): BootstrapPhase[] {
     "configure-openclaw",
     "copy-role-config",
     "install-daemon",
+    "verify-install",
     "wait-registration",
   ];
 

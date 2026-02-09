@@ -33,6 +33,7 @@ export type BootstrapPhaseName =
   | "configure-openclaw"
   | "copy-role-config"
   | "install-daemon"
+  | "verify-install"
   | "wait-registration";
 
 export type BootstrapPhaseStatus = "pending" | "running" | "completed" | "failed" | "skipped";

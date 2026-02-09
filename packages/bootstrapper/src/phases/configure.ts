@@ -1,6 +1,7 @@
 // =============================================================================
 // Phase 2: SSH Configuration
 // Connects to VM and configures OpenClaw, role files, secrets, and daemon.
+// Includes post-install verification (systemctl status + initial logs).
 // =============================================================================
 
 import type {
@@ -93,7 +94,8 @@ export async function configureOpenClaw(
 
   const configPath = `${OPENCLAW_HOME}/.openclaw/config.yaml`;
   // Write as YAML-ish JSON (OpenClaw accepts JSON config)
-  await ssh.writeFile(configPath, JSON.stringify(openclawConfig, null, 2));
+  // Mode 600: config contains API token — readable only by openclaw user
+  await ssh.writeFile(configPath, JSON.stringify(openclawConfig, null, 2), "600");
   logger?.info("OpenClaw configured (model, Chat Completions API, sandbox off)");
 }
 
@@ -247,6 +249,73 @@ WantedBy=multi-user.target
 }
 
 // ---------------------------------------------------------------------------
+// Sub-phase: Verify Installation
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of the post-install verification.
+ */
+export interface VerifyResult {
+  /** Whether the daemon service is running */
+  running: boolean;
+  /** systemctl status output */
+  statusOutput: string;
+  /** Initial journal logs (last 20 lines) */
+  logs: string;
+}
+
+/**
+ * Verify the Agent Daemon is running after installation.
+ *
+ * Checks:
+ * 1. `systemctl is-active hivemi-daemon` = "active"
+ * 2. `journalctl -u hivemi-daemon --no-pager -n 20` for initial logs
+ *
+ * @throws if the daemon is not running
+ */
+export async function verifyInstallation(
+  ssh: ISSHClient,
+  logger?: BootstrapperLogger,
+): Promise<VerifyResult> {
+  logger?.info("Verifying daemon installation");
+
+  // 1. Check service is active
+  const isActiveResult = await ssh.exec("systemctl is-active hivemi-daemon");
+  const isActive = isActiveResult.stdout.trim() === "active";
+
+  // 2. Get detailed status
+  const statusResult = await ssh.exec("systemctl status hivemi-daemon --no-pager 2>&1 || true");
+
+  // 3. Get initial logs
+  const logsResult = await ssh.exec(
+    "journalctl -u hivemi-daemon --no-pager -n 20 2>/dev/null || echo 'No logs available yet'",
+  );
+
+  const result: VerifyResult = {
+    running: isActive,
+    statusOutput: statusResult.stdout,
+    logs: logsResult.stdout,
+  };
+
+  if (!isActive) {
+    logger?.error(`Daemon is not running (status: ${isActiveResult.stdout.trim()})`);
+    logger?.error(`Status output:\n${statusResult.stdout}`);
+    logger?.error(`Logs:\n${logsResult.stdout}`);
+    throw new Error(
+      `Agent Daemon is not running after installation. ` +
+      `Status: ${isActiveResult.stdout.trim()}. ` +
+      `Check journalctl -u hivemi-daemon for details.`,
+    );
+  }
+
+  logger?.info("Daemon is running ✓");
+  logger?.debug(`Status:\n${statusResult.stdout.slice(0, 500)}`);
+  logger?.debug(`Logs:\n${logsResult.stdout.slice(0, 500)}`);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Full configure phase (orchestrates sub-phases)
 // ---------------------------------------------------------------------------
 
@@ -256,6 +325,7 @@ WantedBy=multi-user.target
  * 2. Configure OpenClaw
  * 3. Copy role config
  * 4. Install daemon
+ * 5. Verify installation
  *
  * Each sub-phase is reported separately for granular error tracking.
  */
@@ -319,6 +389,16 @@ export async function configure(
     callbacks?.onPhaseComplete?.("install-daemon");
   } catch (err) {
     callbacks?.onPhaseError?.("install-daemon", err as Error);
+    throw err;
+  }
+
+  // 5. Verify installation
+  callbacks?.onPhaseStart?.("verify-install");
+  try {
+    await verifyInstallation(ssh, logger);
+    callbacks?.onPhaseComplete?.("verify-install");
+  } catch (err) {
+    callbacks?.onPhaseError?.("verify-install", err as Error);
     throw err;
   }
 }

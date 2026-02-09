@@ -765,6 +765,7 @@ export class DeployOrchestrator extends EventEmitter {
       "configure-openclaw": "configuring",
       "copy-role-config": "configuring",
       "install-daemon": "configuring",
+      "verify-install": "configuring",
       "wait-registration": "registering",
     };
 
