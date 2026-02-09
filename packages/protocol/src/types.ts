@@ -807,6 +807,62 @@ export const MessageTypeSchema = P2PMessageTypeSchema;
 export type MessageType = P2PMessageType;
 
 // =============================================================================
+// LOG BATCH — Issue #57: Batch Log Shipping Protocol
+//
+// Daemons accumulate warn, error, and lifecycle logs locally and ship them
+// to the Registry every 5 minutes in a single POST /api/logs request.
+// Debug and info logs stay local (journalctl) and are NOT shipped.
+// =============================================================================
+
+/**
+ * Log levels that should be shipped to the Registry.
+ * - warn: Degraded but recoverable situations
+ * - error: Failures requiring attention
+ * - lifecycle: Structural events (task start/end, connection lost, restart)
+ *
+ * NOT shipped: debug, info (stay in local journalctl)
+ */
+export const ShippableLogLevelSchema = z.enum(["warn", "error", "lifecycle"]);
+export type ShippableLogLevel = z.infer<typeof ShippableLogLevelSchema>;
+
+/**
+ * A single log entry in a batch submission.
+ */
+export const LogBatchEntrySchema = z.object({
+  /** Log level — only warn, error, lifecycle are shipped */
+  level: ShippableLogLevelSchema,
+  /** Human-readable log message */
+  message: z.string().min(1).max(10000),
+  /** ISO 8601 timestamp from the daemon */
+  timestamp: z.string().datetime(),
+  /** Optional metadata for context */
+  metadata: z.object({
+    /** Task ID this log relates to */
+    taskId: z.string().uuid().optional(),
+    /** Component that generated the log (e.g. "task-executor", "daemon") */
+    component: z.string().max(50).optional(),
+  }).passthrough().optional(),
+});
+export type LogBatchEntry = z.infer<typeof LogBatchEntrySchema>;
+
+/**
+ * Schema for POST /api/logs — batch log submission from daemon.
+ *
+ * Protocol spec (Issue #57):
+ * - Sent every 5 minutes
+ * - Only warn, error, and lifecycle entries
+ * - Entries are accumulated locally and shipped in batch
+ * - Max 500 entries per batch to prevent abuse
+ */
+export const SubmitLogBatchSchema = z.object({
+  /** Agent UUID — identifies the source daemon */
+  agentId: z.string().uuid(),
+  /** Array of log entries to persist */
+  entries: z.array(LogBatchEntrySchema).min(1).max(500),
+});
+export type SubmitLogBatch = z.infer<typeof SubmitLogBatchSchema>;
+
+// =============================================================================
 // API RESPONSES
 // =============================================================================
 
