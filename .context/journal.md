@@ -1,5 +1,136 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #63: Provisioner — VM Reconciliation & Cost Estimation
+
+### Summary
+Implemented VM reconciliation (detecting orphaned VMs, phantom agents, and IP mismatches) and enhanced cost estimation with projected/accumulated costs. Added Manager API endpoints, Dashboard UI integration, and comprehensive tests.
+
+### Done
+- **Enhanced Reconciliation** (`packages/provisioner/src/reconciliation.ts`):
+  - `detectIPMismatches(agents, instances)` — detects when an agent's registered host IP doesn't match its VM's actual public IP
+  - Extracts IPv4 from URLs (handles `http://1.2.3.4:3001` format)
+  - Skips localhost/127.x agents, agents without host, non-IP hostnames
+  - `generateReconciliationReport(provider, agents, tag, logger)` — full report for the Dashboard
+  - Structured `ReconciliationIssue` with type, severity, message, and entity references
+  - Three issue types: `orphaned_vm` (severity: error), `phantom_agent` (severity: warning), `ip_mismatch` (severity: warning)
+  - Overall health status: `clean` (no issues), `warning` (some issues), `critical` (3+ orphans or 5+ total issues)
+  - Stats summary: totalVMs, healthy, orphaned, phantom, ipMismatches
+
+- **Enhanced Cost Estimation** (`packages/provisioner/src/cost.ts`):
+  - `generateCostReport(provider, instances, now?)` — full cost report with projections
+  - `monthly`: total cost if all VMs run a full month
+  - `accumulated`: prorated cost each VM has incurred this month based on `createdAt`
+  - `projected`: estimated total for the full month based on current trajectory
+  - `InstanceCostBreakdown`: per-instance name, size, monthlyCost, daysRunning, accumulatedCost
+  - Handles VMs created before the current month (caps days to elapsed days)
+  - Handles string ISO dates and Date objects for `createdAt`
+  - Injectable `now` parameter for deterministic testing
+
+- **New Types** (`packages/provisioner/src/types.ts`):
+  - `CostReport`, `InstanceCostBreakdown` — enhanced cost reporting
+  - `ReconciliationReport`, `ReconciliationIssue` — structured reconciliation output
+  - Extended `RegistryAgent` with `host?` and `privateIp?` fields for IP validation
+
+- **Manager API** (`apps/manager/src/routes/infra.ts`):
+  - `GET /api/infra/reconcile` — runs reconciliation, returns full report
+  - `GET /api/infra/costs` — estimates costs for active VMs
+  - `DELETE /api/infra/reconcile/orphan/:instanceId` — destroys orphaned VM
+  - Lazy-loads provider and provisioner utilities (same pattern as deploy routes)
+  - Maps registry agents to reconciliation format (extracts cloud.instanceId, host, privateIp)
+
+- **Dashboard** (`apps/dashboard/src/app/settings/page.tsx`):
+  - New "Infrastructure" section in Settings (Server icon)
+  - VM Reconciliation card: health status badge, stats grid (total/healthy/orphaned/phantom), issues list with severity coloring, "Destroy" button for orphaned VMs
+  - Cost Estimation card: monthly/projected/accumulated summary, per-instance breakdown with size and days running
+  - API proxy routes: `GET /api/infra/reconcile`, `GET /api/infra/costs`, `DELETE /api/infra/reconcile/orphan/[instanceId]`
+  - `infraApi` in `api.ts` with `reconcile()`, `costs()`, `destroyOrphan(id)` methods
+
+- **43 new tests** (`packages/provisioner/src/__tests__/reconciliation-cost.test.ts`):
+  - `reconcile`: orphaned instances, phantom agents, healthy match, ignored destroyed/offline, no instanceId, mixed scenario, tag passthrough, default tag (8 tests)
+  - `detectIPMismatches`: mismatch detected, IPs match, skip localhost, skip 127.x, skip no host, skip no instanceId, skip null publicIp, skip hostnames, host with port, multiple mismatches (10 tests)
+  - `generateReconciliationReport`: clean report, orphaned warning, phantom warning, IP mismatches, critical (3+ orphans), critical (5+ issues), empty clean (7 tests)
+  - `estimateInstanceCost`: small, medium, large (3 tests)
+  - `estimateCost`: multiple instances, empty, size grouping (3 tests)
+  - `estimateCostFromInstances`: live instances (1 test)
+  - `generateCostReport`: monthly cost, accumulated (full month), accumulated (mid month), projected, empty, timestamp, created today, days cap, multiple sizes, full month equals monthly, string dates (11 tests)
+
+### Key Decisions
+- **Three issue types, not just two** — IP mismatches are a real-world problem where VMs get replaced but the registry isn't updated. Detecting these proactively prevents connectivity issues.
+- **Critical threshold at 3 orphans** — 3+ orphaned VMs is unusual enough to warrant critical status. Each orphan costs money, so the threshold is deliberately low.
+- **Projected cost uses accumulated trajectory** — `projected = accumulated / dayFraction` extrapolates current spending to the full month. More accurate than just `monthly` because it accounts for VMs added/removed mid-month.
+- **Injectable `now` parameter** — the `generateCostReport` accepts a `now` date for deterministic testing. In production it defaults to `new Date()`.
+- **Lazy provider loading** — infra routes load the cloud provider on first request, same pattern as deploy routes. Avoids requiring cloud config at startup.
+- **Destroy endpoint for orphans** — direct action from the Dashboard to clean up orphaned VMs. Logged as a warning for audit trail.
+
+### Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/infra/reconcile` | Run reconciliation, return full report |
+| GET | `/api/infra/costs` | Estimate costs for active VMs |
+| DELETE | `/api/infra/reconcile/orphan/:id` | Destroy an orphaned VM |
+
+### API Response Examples
+```json
+// GET /api/infra/reconcile
+{
+  "status": "warning",
+  "issues": [{
+    "type": "orphaned_vm",
+    "severity": "error",
+    "message": "VM \"orphan-vm\" (inst-123) has no matching agent",
+    "instanceId": "inst-123",
+    "instanceName": "orphan-vm"
+  }],
+  "stats": { "totalVMs": 5, "healthy": 4, "orphaned": 1, "phantom": 0, "ipMismatches": 0 }
+}
+
+// GET /api/infra/costs
+{
+  "monthly": 42,
+  "projected": 38.5,
+  "accumulated": 20.14,
+  "breakdown": [{
+    "name": "hivemi-agent-atlas",
+    "size": "small",
+    "monthlyCostUsd": 6,
+    "daysRunning": 14.5,
+    "accumulatedCostUsd": 3.11
+  }]
+}
+```
+
+### Acceptance Criteria
+- [x] Reconciliation detects orphaned VMs and phantom agents
+- [x] Dashboard shows alerts of inconsistencies (Infrastructure section in Settings)
+- [x] Cost estimation functional (monthly, projected, accumulated, per-instance)
+- [x] API exposed for Dashboard (GET /api/infra/reconcile, GET /api/infra/costs)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/provisioner/src/types.ts` | +CostReport, +InstanceCostBreakdown, +ReconciliationReport, +ReconciliationIssue, extended RegistryAgent |
+| `packages/provisioner/src/reconciliation.ts` | +detectIPMismatches, +generateReconciliationReport |
+| `packages/provisioner/src/cost.ts` | +generateCostReport with projected/accumulated costs |
+| `packages/provisioner/src/index.ts` | Export new types and functions |
+| `packages/provisioner/src/__tests__/reconciliation-cost.test.ts` | NEW — 43 tests |
+| `apps/manager/src/routes/infra.ts` | NEW — infra API routes |
+| `apps/manager/src/routes.ts` | Mount infra routes |
+| `apps/dashboard/src/app/api/infra/reconcile/route.ts` | NEW — proxy to manager |
+| `apps/dashboard/src/app/api/infra/costs/route.ts` | NEW — proxy to manager |
+| `apps/dashboard/src/app/api/infra/reconcile/orphan/[instanceId]/route.ts` | NEW — proxy DELETE |
+| `apps/dashboard/src/lib/api.ts` | +infraApi, +ReconciliationReport, +CostReport types |
+| `apps/dashboard/src/app/settings/page.tsx` | +Infrastructure section with reconciliation and cost UI |
+
+### Commits
+- `d0719a0` — feat(provisioner): VM reconciliation, IP mismatch detection, and cost estimation (#63)
+
+### Next
+- #64 (Daemon ↔ OpenClaw integration)
+- #66 (Bootstrap Script)
+- Periodic reconciliation via Manager cron (every 5 min) — integrate with heartbeat/scheduler
+
+---
+
 ## 2026-02-12 — Issue #62: Provisioner — Firewall & SSH Key Management
 
 ### Summary
