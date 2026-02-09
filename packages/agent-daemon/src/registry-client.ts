@@ -310,20 +310,39 @@ export class RegistryClient implements IRegistryClient {
 
   // -------------------------------------------------------------------------
   // Log shipping — POST /api/logs (batch)
+  // Issue #57: Ship accumulated logs in a single request.
+  // Only warn, error, lifecycle levels are shipped. Debug/info stay local.
   // -------------------------------------------------------------------------
 
   async sendLogs(entries: LogEntry[]): Promise<void> {
     if (entries.length === 0) return;
 
-    // Send logs one by one (registry expects single log entries)
-    // In a production system, we'd batch this
-    for (const entry of entries) {
-      try {
-        await this.request("POST", "/api/logs", entry);
-      } catch (_err) {
-        // Silently drop failed log entries to avoid cascading failures
-        this.logger.debug("Failed to ship log entry");
-      }
+    // Filter: only ship warn, error, lifecycle (debug/info stay local)
+    const shippable = entries.filter(
+      (e) => e.level === "warn" || e.level === "error" || e.level === "lifecycle",
+    );
+
+    if (shippable.length === 0) return;
+
+    const batch = {
+      agentId: this.agentId,
+      entries: shippable.map((e) => ({
+        level: e.level as "warn" | "error" | "lifecycle",
+        message: e.message,
+        timestamp: e.timestamp,
+        metadata: {
+          ...(e.taskId ? { taskId: e.taskId } : {}),
+          ...(e.component ? { component: e.component } : {}),
+          ...(e.metadata ?? {}),
+        },
+      })),
+    };
+
+    const res = await this.request("POST", "/api/logs", batch);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Log batch failed: ${res.status} ${text}`);
     }
   }
 
