@@ -6,6 +6,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
+import { authMiddleware } from "@hivemi/protocol";
 import { logger } from "./lib/logger.js";
 import { registryClient } from "./lib/registry-client.js";
 import { DeployOrchestrator } from "./lib/deploy-orchestrator.js";
@@ -17,6 +18,10 @@ const app = new Hono();
 // Middleware
 app.use("*", cors());
 app.use("*", honoLogger());
+
+// HIVEMI_SECRET auth — validates Bearer token on all /api/* routes.
+// Skips /health for load balancer probes. In dev (no HIVEMI_SECRET), allows all.
+app.use("/api/*", authMiddleware);
 
 // =============================================================================
 // HEALTH
@@ -125,49 +130,35 @@ function createProvisionerProxy() {
 // ---------------------------------------------------------------------------
 
 function createBootstrapperProxy() {
+  // Cache the imported generateCloudInit function
+  let cachedGenerateCloudInit: ((sshPublicKey: string, context?: any) => string) | null = null;
+
   return {
     async bootstrap(config: any, options?: any) {
       const { bootstrap } = await import("@hivemi/bootstrapper");
       return bootstrap(config, options);
     },
     generateCloudInit(sshPublicKey: string, context?: any) {
-      // Synchronous — import at module level is fine for this
-      // Use a simple inline implementation since the real one may not be available
-      const { enableSwap = true, swapSizeMb = 2048 } = context || {};
-      const swapSection = enableSwap
-        ? `swap:\n  filename: /swapfile\n  size: ${swapSizeMb * 1024 * 1024}\n  maxsize: ${swapSizeMb * 1024 * 1024}`
-        : "# swap disabled";
-
-      return `#cloud-config
-users:
-  - name: openclaw
-    shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    lock_passwd: true
-    ssh_authorized_keys:
-      - ${sshPublicKey}
-
-package_update: true
-package_upgrade: true
-packages:
-  - curl
-  - jq
-  - git
-  - htop
-  - unzip
-
-${swapSection}
-
-runcmd:
-  - |
-    su - openclaw -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --non-interactive' || true
-  - |
-    echo 'export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"' >> /home/openclaw/.bashrc
-  - touch /tmp/hivemi-cloud-init-done
-  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done
-
-final_message: "HiveMI cloud-init complete after $UPTIME seconds"
-`;
+      // Lazy-load the real implementation from @hivemi/bootstrapper
+      // Since generateCloudInit is synchronous, we cache it on first call
+      if (!cachedGenerateCloudInit) {
+        try {
+          // Dynamic require for synchronous access — the module should be available
+          // since @hivemi/bootstrapper is a workspace dependency
+          const mod = require("@hivemi/bootstrapper");
+          cachedGenerateCloudInit = mod.generateCloudInit;
+        } catch {
+          // Fallback: shouldn't happen in production, but provide a safe default
+          cachedGenerateCloudInit = (key: string, ctx: any = {}) => {
+            const { enableSwap = true, swapSizeMb = 2048, hostname = "hivemi-agent" } = ctx;
+            const swapSection = enableSwap
+              ? `swap:\n  filename: /swapfile\n  size: ${swapSizeMb * 1024 * 1024}\n  maxsize: ${swapSizeMb * 1024 * 1024}`
+              : "# swap disabled";
+            return `#cloud-config\nhostname: ${hostname}\nmanage_etc_hosts: true\nusers:\n  - name: openclaw\n    shell: /bin/bash\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    lock_passwd: true\n    ssh_authorized_keys:\n      - ${key}\npackage_update: true\npackages:\n  - curl\n  - jq\n  - git\n${swapSection}\nruncmd:\n  - touch /tmp/hivemi-cloud-init-done\n  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done\nfinal_message: "HiveMI cloud-init complete for ${hostname} after $UPTIME seconds"\n`;
+          };
+        }
+      }
+      return cachedGenerateCloudInit!(sshPublicKey, context);
     },
   };
 }

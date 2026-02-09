@@ -1,6 +1,15 @@
 // =============================================================================
 // Phase 1: Cloud-Init
 // Generates the cloud-init user-data YAML and waits for it to complete.
+//
+// The cloud-init template is the entry point for agent VMs. It:
+//   1. Creates the openclaw user with SSH access
+//   2. Sets the VM hostname
+//   3. Installs base packages
+//   4. Optionally configures swap
+//   5. Downloads and executes hivemi-agent-bootstrap.sh from a GitHub Release
+//   6. The bootstrap script handles everything else (OpenClaw, daemon, etc.)
+//   7. Writes /tmp/hivemi-cloud-init-done when finished
 // =============================================================================
 
 import type {
@@ -21,6 +30,71 @@ function swapSection(sizeMb: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Bootstrap script download + execution section
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate the runcmd section for downloading and executing the bootstrap
+ * script from a GitHub Release.
+ *
+ * When releaseUrl and ghToken are provided, the script is downloaded from
+ * the private repo release. Otherwise, falls back to a basic OpenClaw install
+ * for backward compatibility.
+ */
+function bootstrapRunCmd(context: CloudInitContext): string {
+  const { releaseUrl, ghToken, hostname } = context;
+
+  const lines: string[] = [];
+
+  // Set hostname if provided
+  if (hostname) {
+    lines.push(`  - hostnamectl set-hostname "${hostname}"`);
+  }
+
+  if (releaseUrl && ghToken) {
+    // Download bootstrap script from GitHub Release (private repo)
+    lines.push(`  - |`);
+    lines.push(`    export RELEASE_URL="${releaseUrl}"`);
+    lines.push(`    export GH_TOKEN="${ghToken}"`);
+    lines.push(`    SCRIPT_URL="${releaseUrl}/hivemi-agent-bootstrap.sh"`);
+    lines.push(`    echo "Downloading bootstrap script from $SCRIPT_URL"`);
+    lines.push(`    curl -fsSL \\`);
+    lines.push(`      -H "Authorization: token $GH_TOKEN" \\`);
+    lines.push(`      -H "Accept: application/octet-stream" \\`);
+    lines.push(`      -o /tmp/hivemi-agent-bootstrap.sh \\`);
+    lines.push(`      "$SCRIPT_URL"`);
+    lines.push(`    chmod +x /tmp/hivemi-agent-bootstrap.sh`);
+    lines.push(`    echo "Running bootstrap script..."`);
+    lines.push(`    /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" "$GH_TOKEN" 2>&1 | tee /var/log/hivemi-bootstrap.log`);
+  } else if (releaseUrl) {
+    // Public repo — no auth header needed
+    lines.push(`  - |`);
+    lines.push(`    export RELEASE_URL="${releaseUrl}"`);
+    lines.push(`    SCRIPT_URL="${releaseUrl}/hivemi-agent-bootstrap.sh"`);
+    lines.push(`    echo "Downloading bootstrap script from $SCRIPT_URL"`);
+    lines.push(`    curl -fsSL \\`);
+    lines.push(`      -H "Accept: application/octet-stream" \\`);
+    lines.push(`      -o /tmp/hivemi-agent-bootstrap.sh \\`);
+    lines.push(`      "$SCRIPT_URL"`);
+    lines.push(`    chmod +x /tmp/hivemi-agent-bootstrap.sh`);
+    lines.push(`    echo "Running bootstrap script..."`);
+    lines.push(`    /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" 2>&1 | tee /var/log/hivemi-bootstrap.log`);
+  } else {
+    // Legacy fallback: direct OpenClaw install (no bootstrap script)
+    lines.push(`  - |`);
+    lines.push(`    su - openclaw -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --non-interactive' || true`);
+    lines.push(`  - |`);
+    lines.push(`    echo 'export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"' >> /home/openclaw/.bashrc`);
+  }
+
+  // Completion flag — always written last
+  lines.push(`  - touch /tmp/hivemi-cloud-init-done`);
+  lines.push(`  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done`);
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Generate cloud-init YAML
 // ---------------------------------------------------------------------------
 
@@ -29,6 +103,12 @@ function swapSection(sizeMb: number): string {
  *
  * This is called by the orchestrator BEFORE creating the VM — the YAML is
  * passed as `userData` to the provisioner's `createInstance`.
+ *
+ * Template variables (interpolated by the Provisioner before sending):
+ *  - sshPublicKey — SSH public key for Bootstrapper access
+ *  - context.hostname — VM hostname (agent name)
+ *  - context.releaseUrl — GitHub Release URL for the bootstrap script
+ *  - context.ghToken — GitHub token for private repo access
  */
 export function generateCloudInit(
   sshPublicKey: string,
@@ -38,11 +118,19 @@ export function generateCloudInit(
     ? swapSection(context.swapSizeMb ?? 2048)
     : "# swap disabled";
 
+  const hostname = context.hostname ?? "hivemi-agent";
+
   return `#cloud-config
 # =============================================================================
-# HiveMI Cloud-Init — Generic VM setup
+# HiveMI Cloud-Init — Agent VM Bootstrap
+# Generated by @hivemi/bootstrapper
 # =============================================================================
 
+# --- Hostname ----------------------------------------------------------------
+hostname: ${hostname}
+manage_etc_hosts: true
+
+# --- User Setup --------------------------------------------------------------
 users:
   - name: openclaw
     shell: /bin/bash
@@ -52,6 +140,7 @@ users:
     ssh_authorized_keys:
       - ${sshPublicKey}
 
+# --- Packages ----------------------------------------------------------------
 package_update: true
 package_upgrade: true
 packages:
@@ -61,17 +150,14 @@ packages:
   - htop
   - unzip
 
+# --- Swap --------------------------------------------------------------------
 ${swap}
 
+# --- Bootstrap ---------------------------------------------------------------
 runcmd:
-  - |
-    su - openclaw -c 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --non-interactive' || true
-  - |
-    echo 'export PATH="$HOME/.local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"' >> /home/openclaw/.bashrc
-  - touch /tmp/hivemi-cloud-init-done
-  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done
+${bootstrapRunCmd(context)}
 
-final_message: "HiveMI cloud-init complete after $UPTIME seconds"
+final_message: "HiveMI cloud-init complete for ${hostname} after $UPTIME seconds"
 `;
 }
 

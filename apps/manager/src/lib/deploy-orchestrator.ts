@@ -173,7 +173,13 @@ export interface IBootstrapperOps {
     failedPhase?: string;
   }>;
 
-  generateCloudInit(sshPublicKey: string, context?: any): string;
+  generateCloudInit(sshPublicKey: string, context?: {
+    enableSwap: boolean;
+    swapSizeMb?: number;
+    hostname?: string;
+    releaseUrl?: string;
+    ghToken?: string;
+  }): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,10 +339,14 @@ export class DeployOrchestrator extends EventEmitter {
         [], // Rules handled internally by ensureFirewall
       );
 
-      // Generate cloud-init
+      // Generate cloud-init with bootstrap script context
+      const agentHostname = `hivemi-agent-${request.name.toLowerCase()}`;
       const cloudInit = this.bootstrapper.generateCloudInit(cloudConfig.sshPublicKey!, {
         enableSwap: instanceSize === "small",
         swapSizeMb: 2048,
+        hostname: agentHostname,
+        releaseUrl: cloudConfig.releaseUrl,
+        ghToken: cloudConfig.ghToken,
       });
 
       // Create VM

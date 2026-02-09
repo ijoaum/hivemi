@@ -60,7 +60,9 @@ const silentLogger: BootstrapperLogger = {
 // ---------------------------------------------------------------------------
 
 describe("generateCloudInit", () => {
-  it("generates valid cloud-init YAML with swap enabled", () => {
+  // --- Basic structure ---
+
+  it("generates valid cloud-init YAML with #cloud-config header", () => {
     const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
       enableSwap: true,
       swapSizeMb: 1024,
@@ -70,32 +72,191 @@ describe("generateCloudInit", () => {
     expect(yaml).toContain("ssh-ed25519 AAAA...");
     expect(yaml).toContain("openclaw");
     expect(yaml).toContain("hivemi-cloud-init-done");
+  });
+
+  it("includes SSH public key for bootstrapper access", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA+test+key user@host");
+    expect(yaml).toContain("ssh-ed25519 AAAA+test+key user@host");
+    expect(yaml).toContain("ssh_authorized_keys:");
+  });
+
+  it("creates openclaw user with sudo and locked password", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...");
+    expect(yaml).toContain("name: openclaw");
+    expect(yaml).toContain("sudo: ALL=(ALL) NOPASSWD:ALL");
+    expect(yaml).toContain("lock_passwd: true");
+  });
+
+  it("includes required packages", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...");
+    expect(yaml).toContain("curl");
+    expect(yaml).toContain("jq");
+    expect(yaml).toContain("git");
+    expect(yaml).toContain("htop");
+    expect(yaml).toContain("unzip");
+  });
+
+  // --- Swap ---
+
+  it("generates swap section with correct size", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: true,
+      swapSizeMb: 1024,
+    });
     expect(yaml).toContain("swap");
-    expect(yaml).toContain(String(1024 * 1024 * 1024));
+    expect(yaml).toContain("filename: /swapfile");
+    expect(yaml).toContain(String(1024 * 1024 * 1024)); // 1GB in bytes
   });
 
   it("generates cloud-init without swap when disabled", () => {
     const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
       enableSwap: false,
     });
-
     expect(yaml).toContain("# swap disabled");
     expect(yaml).not.toContain("filename: /swapfile");
   });
 
-  it("includes required packages", () => {
-    const yaml = generateCloudInit("ssh-ed25519 AAAA...");
-
-    expect(yaml).toContain("curl");
-    expect(yaml).toContain("jq");
-    expect(yaml).toContain("git");
+  it("defaults to 2048MB swap when swapSizeMb not specified", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: true,
+    });
+    expect(yaml).toContain(String(2048 * 1024 * 1024)); // 2GB in bytes
   });
 
-  it("includes OpenClaw install command", () => {
-    const yaml = generateCloudInit("ssh-ed25519 AAAA...");
+  // --- Hostname ---
+
+  it("sets hostname when provided", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+      hostname: "hivemi-agent-atlas",
+    });
+    expect(yaml).toContain("hostname: hivemi-agent-atlas");
+    expect(yaml).toContain("manage_etc_hosts: true");
+    expect(yaml).toContain('hostnamectl set-hostname "hivemi-agent-atlas"');
+  });
+
+  it("uses default hostname when not specified", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+    });
+    expect(yaml).toContain("hostname: hivemi-agent");
+  });
+
+  it("includes hostname in final_message", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+      hostname: "my-agent",
+    });
+    expect(yaml).toContain("cloud-init complete for my-agent");
+  });
+
+  // --- Bootstrap script (releaseUrl + ghToken) ---
+
+  it("downloads and executes bootstrap script with releaseUrl + ghToken", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+      hostname: "hivemi-agent-atlas",
+      releaseUrl: "https://github.com/ijoaum/hivemi/releases/download/v0.1.0",
+      ghToken: "ghp_test123",
+    });
+
+    // Should download the script with auth
+    expect(yaml).toContain("Authorization: token $GH_TOKEN");
+    expect(yaml).toContain("hivemi-agent-bootstrap.sh");
+    expect(yaml).toContain("/tmp/hivemi-agent-bootstrap.sh");
+    expect(yaml).toContain("chmod +x");
+
+    // Should pass RELEASE_URL and GH_TOKEN to the script
+    expect(yaml).toContain('RELEASE_URL="https://github.com/ijoaum/hivemi/releases/download/v0.1.0"');
+    expect(yaml).toContain('GH_TOKEN="ghp_test123"');
+    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" "$GH_TOKEN"');
+
+    // Should log to hivemi-bootstrap.log
+    expect(yaml).toContain("/var/log/hivemi-bootstrap.log");
+
+    // Should NOT include legacy OpenClaw install
+    expect(yaml).not.toContain("openclaw.ai/install.sh");
+  });
+
+  it("downloads bootstrap script without auth for public repos", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+      releaseUrl: "https://github.com/ijoaum/hivemi/releases/download/v0.1.0",
+      // No ghToken
+    });
+
+    // Should download without Authorization header
+    expect(yaml).not.toContain("Authorization: token");
+    expect(yaml).toContain("hivemi-agent-bootstrap.sh");
+    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL"');
+
+    // Should NOT include legacy OpenClaw install
+    expect(yaml).not.toContain("openclaw.ai/install.sh");
+  });
+
+  // --- Legacy fallback ---
+
+  it("falls back to direct OpenClaw install when no releaseUrl", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+    });
 
     expect(yaml).toContain("openclaw.ai/install.sh");
     expect(yaml).toContain("--non-interactive");
+    expect(yaml).not.toContain("hivemi-agent-bootstrap.sh");
+  });
+
+  // --- Completion flag ---
+
+  it("always writes completion flag at the end", () => {
+    // With bootstrap script
+    const yaml1 = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+      releaseUrl: "https://example.com/release/v1",
+      ghToken: "ghp_test",
+    });
+    expect(yaml1).toContain("touch /tmp/hivemi-cloud-init-done");
+    expect(yaml1).toContain("chown openclaw:openclaw /tmp/hivemi-cloud-init-done");
+
+    // Without bootstrap script (legacy)
+    const yaml2 = generateCloudInit("ssh-ed25519 AAAA...", {
+      enableSwap: false,
+    });
+    expect(yaml2).toContain("touch /tmp/hivemi-cloud-init-done");
+    expect(yaml2).toContain("chown openclaw:openclaw /tmp/hivemi-cloud-init-done");
+  });
+
+  // --- Full template integration ---
+
+  it("generates complete template with all variables", () => {
+    const yaml = generateCloudInit("ssh-ed25519 AAAA+fulltest", {
+      enableSwap: true,
+      swapSizeMb: 512,
+      hostname: "hivemi-agent-zeus",
+      releaseUrl: "https://github.com/ijoaum/hivemi/releases/download/v0.2.0",
+      ghToken: "ghp_fulltest456",
+    });
+
+    // Structure
+    expect(yaml).toMatch(/^#cloud-config/);
+    expect(yaml).toContain("hostname: hivemi-agent-zeus");
+    expect(yaml).toContain("ssh-ed25519 AAAA+fulltest");
+
+    // Packages
+    expect(yaml).toContain("package_update: true");
+    expect(yaml).toContain("package_upgrade: true");
+
+    // Swap
+    expect(yaml).toContain("filename: /swapfile");
+    expect(yaml).toContain(String(512 * 1024 * 1024));
+
+    // Bootstrap
+    expect(yaml).toContain("hivemi-agent-bootstrap.sh");
+    expect(yaml).toContain('GH_TOKEN="ghp_fulltest456"');
+
+    // Completion
+    expect(yaml).toContain("hivemi-cloud-init-done");
+    expect(yaml).toContain("cloud-init complete for hivemi-agent-zeus");
   });
 });
 
@@ -217,6 +378,9 @@ describe("configureOpenClaw", () => {
     expect(config.gateway.http.endpoints.chatCompletions.enabled).toBe(true);
     expect(config.gateway.http.endpoints.chatCompletions.auth.token).toBe("test-token");
     expect(config.sandbox).toBe("off");
+
+    // Config file should have mode 600 (contains API token)
+    expect(configCall[2]).toBe("600");
   });
 });
 

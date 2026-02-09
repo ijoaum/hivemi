@@ -258,4 +258,10 @@ export interface CloudInitContext {
   enableSwap: boolean;
   /** Swap size in MB (default: 2048) */
   swapSizeMb?: number;
+  /** Hostname to set on the VM (e.g. "hivemi-agent-atlas") */
+  hostname?: string;
+  /** URL to the GitHub Release containing hivemi-agent-bootstrap.sh */
+  releaseUrl?: string;
+  /** GitHub token for downloading from a private repo */
+  ghToken?: string;
 }
