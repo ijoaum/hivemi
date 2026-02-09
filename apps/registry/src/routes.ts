@@ -16,6 +16,7 @@ import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
 import taskQueueRoutes from "./routes/tasks.js";
 import discoveryRoutes from "./routes/discovery.js";
+import logRoutes from "./routes/logs.js";
 
 const app = new Hono();
 
@@ -421,30 +422,10 @@ app.delete("/api/tasks/:id", async (c) => {
 });
 
 // =============================================================================
-// LOGS
+// LOGS — Batch Log Shipping (Issue #57)
 // =============================================================================
 
-app.get("/api/logs", async (c) => {
-  try {
-    const limit = parseInt(c.req.query("limit") || "100");
-    const result = await db.select().from(logs).orderBy(desc(logs.timestamp)).limit(limit);
-    return c.json({ success: true, data: result });
-  } catch (error) {
-    logger.error(error, "Failed to fetch logs");
-    return c.json({ success: false, error: "Failed to fetch logs" }, 500);
-  }
-});
-
-app.post("/api/logs", async (c) => {
-  try {
-    const body = await c.req.json();
-    const result = await db.insert(logs).values(body).returning();
-    return c.json({ success: true, data: result[0] }, 201);
-  } catch (error) {
-    logger.error(error, "Failed to create log");
-    return c.json({ success: false, error: "Failed to create log" }, 500);
-  }
-});
+app.route("/api/logs", logRoutes);
 
 // =============================================================================
 // SETTINGS — Cloud Config
