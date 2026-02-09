@@ -1,5 +1,136 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #70: Undeploy — Fluxo de Destruição de Agentes
+
+### Summary
+Implemented the full agent destruction flow — from Dashboard button to VM deletion, firewall cleanup, and task requeue. The daemon now handles SIGTERM gracefully (waits for active tasks), the Deploy Orchestrator supports both graceful and forced destruction, and the Dashboard shows proper destroyed state with confirmation dialogs.
+
+### What was done
+
+1. **Daemon — Enhanced Graceful Shutdown** (`packages/agent-daemon/src/index.ts`):
+   - `shuttingDown` flag set on `stop()` — prevents new task polling immediately
+   - If idle: reports offline and exits immediately
+   - If executing a task: waits up to `shutdownTimeoutMs` (default 55s) for completion
+   - If timeout: marks task as `failed` with error "Agent shutdown — task aborted due to SIGTERM timeout"
+   - Ships remaining logs and sets agent status to `offline` before exit
+   - `waitForTaskCompletion()` polls every 500ms for task completion
+   - Idempotent: calling `stop()` twice is safe
+
+2. **Daemon Config** (`packages/agent-daemon/src/types.ts`):
+   - New `shutdownTimeoutMs` field (default: 55,000ms — 5s under systemd's 60s SIGKILL)
+   - Parsed from `SHUTDOWN_TIMEOUT_MS` env var via `loadConfigFromEnv`
+
+3. **Systemd Unit** (`packages/agent-daemon/systemd/hivemi-agent.service`):
+   - Added `TimeoutStopSec=60` — systemd sends SIGKILL after 60s if daemon doesn't exit
+   - Daemon's 55s timeout leaves 5s buffer for cleanup (log shipping, offline status)
+
+4. **Deploy Orchestrator — Enhanced Undeploy** (`apps/manager/src/lib/deploy-orchestrator.ts`):
+   - `undeploy(deployId, options?: { force?: boolean })` — full destruction flow:
+     - **Graceful check**: blocks with `UndeployBlockedError` if agent is `working` and `force` is not set
+     - **VM destruction**: calls `provisioner.destroyInstance()` (handles 404 gracefully)
+     - **Firewall cleanup**: removes VM from firewall via `provisioner.removeInstanceFromFirewall()`
+     - **Task requeue**: calls `registry.requeueLockedTasks()` to return locked tasks to queue
+     - **History preservation**: sets deploy/agent status to `destroyed` but never deletes DB rows
+     - **Already-destroyed**: handles gracefully (idempotent, logs and returns)
+   - `redeploy()` now uses `force: true` for destruction (immutable deploy model)
+   - New `UndeployBlockedError` class with `agentId` and `deployId` properties
+   - New `IRegistryClient.requeueLockedTasks()` interface method
+
+5. **Registry — Task Requeue Endpoint** (`apps/registry/src/routes/tasks.ts`):
+   - `POST /api/tasks/requeue` — requeues all tasks locked by a specific agent
+   - Body: `{ agentId: string }`
+   - Sets each locked task back to `queued`, clears `lockedBy`, `lockedAt`, `startedAt`, `agentId`, `error`
+   - Returns `{ requeued: N }` count
+   - Used during undeploy to prevent task loss when destroying an agent
+
+6. **Manager Registry Client** (`apps/manager/src/lib/registry-client.ts`):
+   - Added `requeueLockedTasks(agentId)` method that calls the Registry's requeue endpoint
+
+7. **Manager Deploy Routes** (`apps/manager/src/routes/deploy.ts`):
+   - `DELETE /api/deploy/:id?force=true` — supports `force` query param
+   - Returns 409 with `{ blocked: true, agentId, deployId }` when agent is working
+   - Catches `UndeployBlockedError` for proper HTTP response
+
+8. **Dashboard — Agent Types** (`apps/dashboard/src/types/agent.ts`):
+   - `AgentStatus` now includes: `provisioning`, `working`, `idle`, `error`, `offline`, `unreachable`, `destroyed`
+
+9. **Dashboard — AgentCard** (`apps/dashboard/src/components/agent-card.tsx`):
+   - Status config for all 7 statuses (provisioning=blue, unreachable=yellow, destroyed=gray)
+   - Destroyed agents: greyed out, no action menu (no start/stop/restart/destroy)
+   - Provisioning agents: blue with pulse animation
+   - Menu button renamed "Delete" → "Destroy"
+
+10. **Dashboard — Agent Detail Page** (`apps/dashboard/src/app/agents/[id]/page.tsx`):
+    - Fixed existing syntax error (extra `</div>` tag)
+    - Actions hidden for destroyed agents (`isDestroyed` check)
+    - "Destroy" button in dropdown menu with proper confirmation modal:
+      - Message: "Destroy agent {name}? This will delete the VM and all local data."
+    - Force destroy dialog when agent is working:
+      - Message: "Agent is currently working on a task. Force destroying will abort the task."
+    - `handleDelete` tries graceful first, catches blocked error → shows force dialog
+    - `handleForceDestroy` uses `deployApi.destroy(id, true)` with force flag
+    - `deployApi` imported and used for destroy flow
+
+11. **Dashboard — API Client** (`apps/dashboard/src/lib/api.ts`):
+    - New `Deploy` interface with full deploy type
+    - `DestroyResponse` interface with `blocked` flag
+    - `deployApi` methods: `get`, `list`, `destroy(id, force?)`, `redeploy(id, data)`
+
+12. **36 new tests**:
+    - **9 daemon tests** (`packages/agent-daemon/src/__tests__/graceful-shutdown.test.ts`):
+      - shuttingDown flag, immediate idle stop, setOffline during shutdown, lifecycle logging, idempotent stop, custom timeout, default timeout, SHUTDOWN_TIMEOUT_MS env parsing, default env value
+    - **27 orchestrator tests** (`apps/manager/src/__tests__/undeploy.test.ts`):
+      - Basic: destroy VM, mark agent destroyed (not deleted), remove from active, emit event, throw for missing
+      - Graceful: block working agent, UndeployBlockedError fields, force bypass, idle proceeds, offline proceeds, unreachable proceeds
+      - Firewall: remove from firewall, continue on firewall error
+      - Task requeue: requeue locked tasks, continue on requeue error, skip if no agentId
+      - Edge cases: already destroyed, VM 404, no instanceId, completedAt set
+      - Redeploy: destroy+create, force for working agents, mark old destroyed, new names
+      - UndeployBlockedError: name, properties, instanceof
+
+### Key Decisions
+- **Daemon waits 55s, systemd kills at 60s** — the 5s buffer ensures the daemon always has time to ship logs and set offline status, even if the task timeout fires at the last second.
+- **Graceful-first, force as option** — the default behavior blocks destruction when an agent is working. The Dashboard shows a separate "Force Destroy" dialog explaining the consequences. Redeploy always uses force (immutable model).
+- **History preserved** — agent and deploy rows are NEVER deleted from the database. Status changes to `destroyed` but all historical data (tasks, logs, telemetry) remains queryable.
+- **Task requeue, not fail** — locked tasks are returned to `queued` status (not failed) so another agent can pick them up. This is the correct behavior for destruction — the task didn't fail, the worker died.
+- **Firewall cleanup is best-effort** — if the firewall API fails, destruction continues. The reconciliation system (#63) will catch orphaned firewall entries.
+- **Idempotent undeploy** — calling undeploy on an already-destroyed deploy is a no-op (logs and returns). This prevents errors from double-clicks or retries.
+
+### Acceptance Criteria
+- [x] Destroy functional end-to-end (Dashboard → VM deleted)
+- [x] Graceful shutdown of daemon with SIGTERM
+- [x] Tasks in progress handled correctly (wait or force + requeue)
+- [x] Redeploy functional (force destroy + fresh deploy)
+- [x] Cleanup of firewall
+- [x] History maintained in database (never delete rows)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/agent-daemon/src/index.ts` | Enhanced graceful shutdown with task wait + timeout |
+| `packages/agent-daemon/src/types.ts` | +shutdownTimeoutMs config field |
+| `packages/agent-daemon/systemd/hivemi-agent.service` | +TimeoutStopSec=60 |
+| `packages/agent-daemon/src/__tests__/graceful-shutdown.test.ts` | NEW — 9 tests |
+| `apps/manager/src/lib/deploy-orchestrator.ts` | Enhanced undeploy with force, firewall, requeue, UndeployBlockedError |
+| `apps/manager/src/lib/registry-client.ts` | +requeueLockedTasks method |
+| `apps/manager/src/routes/deploy.ts` | DELETE with force param, 409 for blocked |
+| `apps/manager/src/__tests__/undeploy.test.ts` | NEW — 27 tests |
+| `apps/registry/src/routes/tasks.ts` | +POST /requeue endpoint |
+| `apps/dashboard/src/types/agent.ts` | All 7 agent statuses |
+| `apps/dashboard/src/components/agent-card.tsx` | Destroyed state, provisioning, all statuses |
+| `apps/dashboard/src/app/agents/[id]/page.tsx` | Destroy/force-destroy dialogs, syntax fix |
+| `apps/dashboard/src/lib/api.ts` | +deployApi, +Deploy type, +DestroyResponse |
+
+### Commits
+- `39fcfde` — feat: undeploy flow — graceful shutdown, firewall cleanup, task requeue (#70)
+
+### Next
+- #71+ — Deploy progress SSE improvements
+- Periodic reconciliation via cron to catch orphaned VMs
+- Integration testing with actual DigitalOcean API
+
+---
+
 ## 2026-02-12 — Issue #66: CI/CD — Script hivemi-agent-bootstrap.sh
 
 ### Summary
