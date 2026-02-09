@@ -1,5 +1,114 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #62: Provisioner — Firewall & SSH Key Management
+
+### Summary
+Implemented automated SSH key generation, 1Password-ready secret storage, control plane IP auto-detection, and enhanced firewall management with ICMP rules and IP change detection. The `InfraManager` class ties everything together as a single entry point for deploy infrastructure setup.
+
+### Done
+- **SSH Key Generation** (`packages/provisioner/src/ssh-keygen.ts`):
+  - `generateSSHKeyPair(comment?)` — generates ed25519 keypairs using Node's built-in `crypto.generateKeyPairSync`
+  - Private key in PEM (PKCS#8) format, public key in OpenSSH wire format
+  - `pemToOpenSSH()` — converts PEM SPKI public key to `ssh-ed25519 <base64> <comment>` format
+  - `isValidSSHPublicKey(key)` — validates SSH public key format (ed25519, RSA, ECDSA)
+  - No external dependencies — pure Node.js crypto
+
+- **Control Plane IP Detection** (`packages/provisioner/src/ip-detect.ts`):
+  - `detectControlPlaneIP(logger?)` — auto-detects public IP using multiple services (ipify, ifconfig.me, checkip.amazonaws.com, icanhazip.com)
+  - Falls through services on failure — first valid IPv4 wins
+  - 5-minute caching to avoid excessive external calls
+  - `detectIPChange(knownIp, logger?)` — checks if IP has changed since last detection
+  - `clearIPCache()` — force fresh detection
+  - `isValidIPv4(ip)` — strict IPv4 validation (rejects leading zeros, out-of-range octets)
+
+- **Firewall Rules Enhanced** (`packages/provisioner/src/firewall.ts`):
+  - `createDefaultRules()` now includes **ICMP inbound** rule for monitoring (ping from anywhere)
+  - Total: 3 inbound (SSH, daemon port 3100, ICMP) + 3 outbound (TCP, UDP, ICMP)
+  - `FirewallManager.updateControlPlaneIP(newIp)` — updates firewall rules when IP changes
+  - `FirewallManager.getLastKnownIP()` — tracks the IP used for current rules
+  - Skips update if IP is unchanged (avoids unnecessary API calls)
+
+- **InfraManager** (`packages/provisioner/src/infra-manager.ts`):
+  - Top-level orchestrator for deploy infrastructure
+  - `ISecretStore` abstraction — interface for secret storage (1Password in prod, in-memory for tests)
+    - `get(ref)`, `set(ref, value)`, `exists(ref)` methods
+  - `InfraManager.setup()` — idempotent full setup:
+    1. Generate SSH keypair (or load existing from secret store)
+    2. Store private key in secret store (e.g., 1Password)
+    3. Register public key with cloud provider
+    4. Detect control plane IP
+    5. Create/update firewall with correct rules
+  - `InfraManager.checkIPChange()` — lightweight periodic IP check + firewall update
+  - `InfraManager.addInstanceToFirewall(id)` / `removeInstanceFromFirewall(id)` — manage VM membership
+  - `InfraManager.getPrivateKey()` — retrieve private key from secret store (for SSH bootstrapping)
+  - `InfraManager.loadState()` / `getState()` — persist/restore state across restarts
+  - Returns `InfraSetupResult` with flags: `keyGenerated`, `firewallCreated`, `ipChanged`
+
+- **65 new tests** (`packages/provisioner/src/__tests__/infra.test.ts`):
+  - SSH keygen: valid keypair, comments, uniqueness, format, base64 encoding (7 tests)
+  - Key validation: ed25519, empty, random, unsupported, no comment, RSA, ECDSA (7 tests)
+  - IPv4 validation: valid, invalid, leading zeros, whitespace (4 tests)
+  - IP detection: first service, fallback, invalid response, caching, all fail, HTTP errors (6 tests)
+  - IP change: detected, unchanged, failure tolerance (3 tests)
+  - Firewall rules: ICMP inbound, rule counts, source restrictions, CIDR, outbound (7 tests)
+  - FirewallManager IP update: track IP, update rules, skip unchanged, throw pre-init, correct rules (5 tests)
+  - InfraManager setup: keygen, private key storage, public key storage, provider registration, IP detection, firewall creation, reuse existing, idempotent, IP change detection, firewall update, custom names, store failure (12 tests)
+  - InfraManager checkIPChange: no known IP, detected change, firewall update, unchanged (4 tests)
+  - InfraManager firewall ops: add after setup, throw before setup, remove (3 tests)
+  - InfraManager getPrivateKey: from store, null when no ref (2 tests)
+  - InfraManager state: expose state, load state, restore firewall, sub-managers (4 tests)
+
+- **Updated 1 existing test** in `provisioner.test.ts` to match new ICMP inbound rule (3 inbound instead of 2)
+
+### Key Decisions
+- **Node.js crypto, not exec** — `generateKeyPairSync("ed25519")` is fast, synchronous, and needs no `ssh-keygen` binary. PEM-to-OpenSSH conversion done manually (the DER format for ed25519 SPKI is fixed/simple).
+- **ISecretStore abstraction** — decouples from 1Password. The `InfraManager` calls `set(ref, value)` and `get(ref)` — production wires this to `op item create/read`, tests use an in-memory Map.
+- **Multiple IP services** — single service = single point of failure. We try 4 services in sequence (ipify, ifconfig.me, checkip.amazonaws.com, icanhazip.com). First valid IPv4 wins.
+- **5-minute IP cache** — the control plane's public IP rarely changes, but we want to detect when it does. 5-minute cache balances freshness vs. external API calls.
+- **ICMP inbound everywhere** — ping should work from any IP for monitoring. SSH and daemon port remain restricted to control plane only.
+- **Idempotent setup** — `InfraManager.setup()` can be called repeatedly. First run generates everything; subsequent runs reuse existing state and only act on changes (IP drift).
+- **State persistence** — `loadState()`/`getState()` let the caller persist InfraManager state to the Registry or settings, so it survives process restarts.
+
+### Architecture
+```
+InfraManager
+├── SSHKeyManager (provider key registration + caching)
+├── FirewallManager (firewall CRUD + IP change detection)
+├── ssh-keygen (ed25519 key generation)
+├── ip-detect (public IP auto-detection)
+└── ISecretStore (private key storage abstraction)
+     └── 1PasswordSecretStore (production)
+     └── InMemorySecretStore (testing)
+```
+
+### Acceptance Criteria
+- [x] SSH key auto-registrada no provider — `ensureDeployKey()` via SSHKeyManager
+- [x] Keypair gerado e armazenado no 1Password — `generateSSHKeyPair()` + `ISecretStore.set()`
+- [x] Firewall criado automaticamente — `ensureFirewall()` via FirewallManager
+- [x] VMs novas adicionadas ao firewall — `addInstanceToFirewall()` via InfraManager
+- [x] IP do control plane detectado e usado nas regras — `detectControlPlaneIP()` + `createDefaultRules()`
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/provisioner/src/ssh-keygen.ts` | NEW — ed25519 keypair generation |
+| `packages/provisioner/src/ip-detect.ts` | NEW — control plane IP auto-detection |
+| `packages/provisioner/src/infra-manager.ts` | NEW — top-level infrastructure orchestrator |
+| `packages/provisioner/src/firewall.ts` | +ICMP inbound rule, +updateControlPlaneIP, +getLastKnownIP |
+| `packages/provisioner/src/index.ts` | Export new modules and types |
+| `packages/provisioner/src/__tests__/infra.test.ts` | NEW — 65 tests |
+| `packages/provisioner/src/__tests__/provisioner.test.ts` | Updated for ICMP inbound rule |
+
+### Commits
+- `56919a2` — feat(provisioner): SSH keygen, IP detection, firewall ICMP, InfraManager (#62)
+
+### Next
+- #63 (Deploy Orchestrator: Full Pipeline) — integrate InfraManager into deploy flow
+- #64 (Daemon ↔ OpenClaw integration) — deeper runtime integration
+- #66 (Bootstrap Script) — shell script for cloud-init
+
+---
+
 ## 2026-02-11 — Issue #61: Provisioner — DigitalOcean Implementation
 
 ### Summary
