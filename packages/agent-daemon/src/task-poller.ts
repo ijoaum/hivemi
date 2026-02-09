@@ -1,6 +1,9 @@
 // =============================================================================
 // Task Poller
-// Polls the registry task queue, executes tasks via OpenClaw, reports results.
+// Polls the registry task queue, executes tasks via TaskExecutor, reports results.
+//
+// The poller owns the "when" (polling loop, concurrency control).
+// The TaskExecutor owns the "how" (health check, prompt, execution, parsing).
 // =============================================================================
 
 import type {
@@ -11,11 +14,12 @@ import type {
   IRegistryClient,
   TaskResult,
 } from "./types.js";
+import { TaskExecutor, OpenClawUnavailableError, type TaskExecutionResult } from "./task-executor.js";
 
 export class TaskPoller {
   private readonly config: DaemonConfig;
   private readonly registry: IRegistryClient;
-  private readonly openclaw: IOpenClawClient;
+  private readonly executor: TaskExecutor;
   private readonly logger: DaemonLogger;
   private readonly logBuffer: Array<import("./types.js").LogEntry>;
 
@@ -34,9 +38,11 @@ export class TaskPoller {
   ) {
     this.config = config;
     this.registry = registry;
-    this.openclaw = openclaw;
     this.logger = logger;
     this.logBuffer = logBuffer;
+
+    // Create the task executor
+    this.executor = new TaskExecutor(config, openclaw, registry, logger, logBuffer);
   }
 
   get tasksCompleted(): number {
@@ -83,7 +89,7 @@ export class TaskPoller {
       if (!task) return;
 
       this.logger.info(`Received task: ${task.title}`, { taskId: task.id });
-      await this.execute(task);
+      await this.executeTask(task);
     } catch (err) {
       this.logger.error("Error polling for tasks", {
         error: err instanceof Error ? err.message : String(err),
@@ -92,51 +98,55 @@ export class TaskPoller {
   }
 
   // -------------------------------------------------------------------------
-  // Task execution
+  // Task execution — delegates to TaskExecutor
   // -------------------------------------------------------------------------
 
-  private async execute(task: DaemonTask): Promise<void> {
+  private async executeTask(task: DaemonTask): Promise<void> {
     this.executing = true;
     this._activeTask = task;
-    const startTime = Date.now();
 
     try {
       // 1. Update agent status to working
       await this.registry.updateStatus("working");
 
-      // 2. Build prompt from task
-      const prompt = this.buildPrompt(task);
+      // 2. Execute via TaskExecutor (health check + prompt + execute + parse)
+      const result: TaskExecutionResult = await this.executor.execute(task);
 
-      // 3. Execute via OpenClaw
-      this.logger.info(`Executing task via OpenClaw`, { taskId: task.id });
-      this.addLog("info", `Executing task: ${task.title}`, task.id, "task-poller");
+      // 3. Report result to registry
+      await this.registry.reportTaskResult(task.id, result.taskResult);
 
-      const output = await this.openclaw.executeTask(prompt, this.config.taskTimeoutMs);
+      // 4. Create subtasks if any were parsed
+      if (result.parsed.subtasks.length > 0) {
+        await this.createSubtasks(task, result);
+      }
 
-      // 4. Report success
-      const elapsedMs = Date.now() - startTime;
-      const result: TaskResult = {
-        status: "completed",
-        output,
-        error: null,
-        elapsedMs,
-        artifacts: [],
-      };
+      // 5. Update counters
+      if (result.taskResult.status === "completed") {
+        this._tasksCompleted++;
+      } else {
+        this._tasksFailed++;
+      }
 
-      await this.registry.reportTaskResult(task.id, result);
-      this._tasksCompleted++;
-      this.logger.info(`Task completed in ${elapsedMs}ms`, { taskId: task.id });
-      this.addLog("info", `Task completed in ${elapsedMs}ms`, task.id, "task-poller");
+      this.logger.info(`Task ${result.taskResult.status}: ${task.title}`, {
+        taskId: task.id,
+        elapsedMs: result.elapsedMs,
+      });
     } catch (err) {
-      // Report failure
-      const elapsedMs = Date.now() - startTime;
+      // Handle execution errors
       const errorMsg = err instanceof Error ? err.message : String(err);
+
+      if (err instanceof OpenClawUnavailableError) {
+        // OpenClaw is down — return task to queue by reporting failure
+        this.logger.error(`OpenClaw unavailable — task returned to queue`, {
+          taskId: task.id,
+        });
+      }
 
       const result: TaskResult = {
         status: "failed",
         output: null,
         error: errorMsg,
-        elapsedMs,
+        elapsedMs: 0,
         artifacts: [],
       };
 
@@ -156,7 +166,7 @@ export class TaskPoller {
       this._activeTask = null;
       this.executing = false;
 
-      // 5. Set agent status back to idle
+      // Set agent status back to idle
       try {
         await this.registry.updateStatus("idle");
       } catch (_err) {
@@ -166,32 +176,55 @@ export class TaskPoller {
   }
 
   // -------------------------------------------------------------------------
-  // Build prompt from task
+  // Subtask creation
   // -------------------------------------------------------------------------
 
-  private buildPrompt(task: DaemonTask): string {
-    const parts: string[] = [];
+  private async createSubtasks(
+    parentTask: DaemonTask,
+    result: TaskExecutionResult,
+  ): Promise<void> {
+    for (const subtask of result.parsed.subtasks) {
+      try {
+        this.logger.info(`Creating subtask: ${subtask.title}`, {
+          parentTaskId: parentTask.id,
+          roleTarget: subtask.roleTarget,
+        });
 
-    parts.push(`# Task: ${task.title}`);
-    parts.push("");
+        // Use the dedicated subtask creation endpoint (POST /api/tasks/:id/subtasks)
+        const subtaskId = await this.registry.createSubtask(parentTask.id, {
+          title: subtask.title,
+          description: subtask.description,
+          priority: subtask.priority,
+          roleTarget: subtask.roleTarget,
+        });
 
-    if (task.description) {
-      parts.push("## Description");
-      parts.push(task.description);
-      parts.push("");
+        if (subtaskId) {
+          this.addLog(
+            "info",
+            `Subtask created: ${subtask.title} → ${subtask.roleTarget || "any"} (${subtaskId.substring(0, 8)})`,
+            parentTask.id,
+            "task-poller",
+          );
+        } else {
+          this.addLog(
+            "warn",
+            `Subtask creation returned no ID: ${subtask.title}`,
+            parentTask.id,
+            "task-poller",
+          );
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to create subtask: ${subtask.title}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        this.addLog(
+          "warn",
+          `Failed to create subtask: ${subtask.title} — ${err instanceof Error ? err.message : String(err)}`,
+          parentTask.id,
+          "task-poller",
+        );
+      }
     }
-
-    if (task.input) {
-      parts.push("## Input");
-      parts.push(task.input);
-      parts.push("");
-    }
-
-    parts.push("## Instructions");
-    parts.push("Execute this task completely. Report your results clearly.");
-    parts.push("If you encounter errors, describe them in detail.");
-
-    return parts.join("\n");
   }
 
   // -------------------------------------------------------------------------

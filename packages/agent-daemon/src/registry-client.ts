@@ -11,6 +11,7 @@ import type {
   DaemonTask,
   IRegistryClient,
   LogEntry,
+  SubtaskPayload,
   TaskResult,
   TelemetrySnapshot,
 } from "./types.js";
@@ -282,6 +283,48 @@ export class RegistryClient implements IRegistryClient {
       taskId,
       body: text,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Create subtask — POST /api/tasks/:id/subtasks
+  // Issue #67: Uses the dedicated subtask endpoint from Issue #55.
+  // Returns the created subtask ID, or null if creation failed.
+  // -------------------------------------------------------------------------
+
+  async createSubtask(parentTaskId: string, subtask: SubtaskPayload): Promise<string | null> {
+    const body: Record<string, unknown> = {
+      title: subtask.title,
+      description: subtask.description,
+      priority: subtask.priority || "medium",
+    };
+
+    if (subtask.roleTarget) {
+      body.roleTarget = subtask.roleTarget;
+    }
+
+    if (subtask.input) {
+      body.input = subtask.input;
+    }
+
+    const res = await this.request("POST", `/api/tasks/${parentTaskId}/subtasks`, body);
+
+    if (res.ok) {
+      const json = await res.json() as { success: boolean; data?: { id: string } };
+      const subtaskId = json.data?.id || null;
+      this.logger.info(`Subtask created: ${subtask.title}`, {
+        parentTaskId,
+        subtaskId,
+        roleTarget: subtask.roleTarget,
+      });
+      return subtaskId;
+    }
+
+    const text = await res.text();
+    this.logger.warn(`Failed to create subtask: ${res.status}`, {
+      parentTaskId,
+      body: text,
+    });
+    return null;
   }
 
   // -------------------------------------------------------------------------

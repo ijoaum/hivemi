@@ -1,16 +1,11 @@
 {
-  "currentIssue": 49,
+  "currentIssue": 68,
   "status": "running",
   "completedIssues": [
     69,
     71,
     44,
     45,
-    46,
-    47,
-    48
-  ],
-  "issueQueue": [
     46,
     47,
     48,
@@ -29,6 +24,10 @@
     61,
     62,
     63,
+    65,
+    66
+  ],
+  "issueQueue": [
     64,
     65,
     66,
@@ -38,6 +37,6 @@
     72,
     73
   ],
-  "updatedAt": "2026-02-08T22:56:33.344Z",
-  "notes": "Re-run com fix de data is not defined."
+  "updatedAt": "2026-02-09T01:31:49.264Z",
+  "notes": "Re-run: #64-#68, #70, #72, #73"
 }

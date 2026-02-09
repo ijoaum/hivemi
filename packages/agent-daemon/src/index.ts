@@ -350,6 +350,8 @@ if (isEntryPoint) {
 export { RegistryClient } from "./registry-client.js";
 export { OpenClawClient } from "./openclaw-client.js";
 export { TaskPoller } from "./task-poller.js";
+export { TaskExecutor, OpenClawUnavailableError } from "./task-executor.js";
+export type { TaskExecutionResult, TaskExecutorConfig } from "./task-executor.js";
 export { TelemetryCollector } from "./telemetry.js";
 export { P2PClient, P2PError } from "./p2p-client.js";
 export { P2PHandler } from "./p2p-handler.js";

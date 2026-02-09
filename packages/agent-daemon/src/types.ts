@@ -61,6 +61,58 @@ export interface DaemonConfig {
   logBatchIntervalMs: number;
   /** Task execution timeout in ms (default: 600_000 = 10 min) */
   taskTimeoutMs: number;
+
+  /** Role name for this agent (e.g. "pm", "developer", "qa", "tech-lead") */
+  roleName?: string;
+
+  /** Per-role timeout overrides in ms. Key = role name, value = timeout in ms. */
+  roleTimeouts?: Record<string, number>;
+}
+
+/** Default timeouts per role in ms */
+export const DEFAULT_ROLE_TIMEOUTS: Record<string, number> = {
+  pm: 10 * 60_000,          // 10 min
+  developer: 30 * 60_000,   // 30 min
+  qa: 20 * 60_000,          // 20 min
+  "tech-lead": 15 * 60_000, // 15 min
+};
+
+/**
+ * Parse ROLE_TIMEOUTS env var.
+ * Format: "pm=600000,developer=1800000,qa=1200000,tech-lead=900000"
+ */
+function parseRoleTimeouts(value: string | undefined): Record<string, number> | undefined {
+  if (!value) return undefined;
+  const result: Record<string, number> = {};
+  for (const pair of value.split(",")) {
+    const [role, ms] = pair.trim().split("=");
+    if (role && ms) {
+      const parsed = parseInt(ms, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        result[role.trim()] = parsed;
+      }
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
+ * Get the effective task timeout for a given role.
+ * Priority: config.roleTimeouts > DEFAULT_ROLE_TIMEOUTS > config.taskTimeoutMs
+ */
+export function getEffectiveTimeout(config: DaemonConfig): number {
+  const roleName = config.roleName?.toLowerCase();
+  if (roleName) {
+    // Check explicit overrides first
+    if (config.roleTimeouts?.[roleName] !== undefined) {
+      return config.roleTimeouts[roleName];
+    }
+    // Check defaults
+    if (DEFAULT_ROLE_TIMEOUTS[roleName] !== undefined) {
+      return DEFAULT_ROLE_TIMEOUTS[roleName];
+    }
+  }
+  return config.taskTimeoutMs;
 }
 
 /** Parse DaemonConfig from process.env */
@@ -95,6 +147,8 @@ export function loadConfigFromEnv(env: Record<string, string | undefined>): Daem
     telemetryIntervalMs: optionalInt("TELEMETRY_INTERVAL_MS", 60_000),
     logBatchIntervalMs: optionalInt("LOG_BATCH_INTERVAL_MS", 300_000),
     taskTimeoutMs: optionalInt("TASK_TIMEOUT_MS", 600_000),
+    roleName: env["ROLE_NAME"],
+    roleTimeouts: parseRoleTimeouts(env["ROLE_TIMEOUTS"]),
   };
 }
 
@@ -125,6 +179,14 @@ export interface TaskArtifact {
   type: string;
   url: string;
   description: string;
+}
+
+export interface SubtaskPayload {
+  title: string;
+  description: string | null;
+  priority: "high" | "medium" | "low" | null;
+  roleTarget: string | null;
+  input?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +250,9 @@ export interface IRegistryClient {
   /** PUT /api/tasks/:id — update task with result */
   reportTaskResult(taskId: string, result: TaskResult): Promise<void>;
 
+  /** POST /api/tasks/:id/subtasks — create a subtask for a parent task */
+  createSubtask(parentTaskId: string, subtask: SubtaskPayload): Promise<string | null>;
+
   /** POST /api/agents/:id/telemetry — send telemetry data */
   sendTelemetry(snapshot: TelemetrySnapshot): Promise<void>;
 
@@ -214,6 +279,13 @@ export interface IOpenClawClient {
 
   /** Attempt to restart the OpenClaw gateway */
   restart(): Promise<boolean>;
+
+  /**
+   * Destroy the session created by executeTask.
+   * Cleans up resources after each task to avoid context carryover.
+   * Returns true if destroyed, false if cleanup failed (non-critical).
+   */
+  destroySession(): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------

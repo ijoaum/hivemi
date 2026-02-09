@@ -14,6 +14,7 @@ export class OpenClawClient implements IOpenClawClient {
   private readonly baseUrl: string;
   private readonly apiToken?: string;
   private readonly logger: DaemonLogger;
+  private lastSessionId: string | null = null;
 
   constructor(config: DaemonConfig, logger: DaemonLogger) {
     this.baseUrl = (config.openclawUrl || "http://127.0.0.1:4100").replace(/\/$/, "");
@@ -59,6 +60,9 @@ export class OpenClawClient implements IOpenClawClient {
   async executeTask(prompt: string, timeoutMs: number): Promise<string> {
     this.logger.info("Sending task to OpenClaw Chat Completions API");
 
+    // Clear any previous session ID
+    this.lastSessionId = null;
+
     const body = {
       model: "default",
       messages: [
@@ -83,8 +87,14 @@ export class OpenClawClient implements IOpenClawClient {
     }
 
     const json = await res.json() as {
+      id?: string;
       choices?: Array<{ message?: { content?: string } }>;
     };
+
+    // Capture session ID for cleanup (Chat Completions returns it as `id`)
+    if (json.id) {
+      this.lastSessionId = json.id;
+    }
 
     const content = json.choices?.[0]?.message?.content;
     if (!content) {
@@ -124,6 +134,46 @@ export class OpenClawClient implements IOpenClawClient {
       return false;
     } catch (err) {
       this.logger.error("Failed to restart OpenClaw", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Destroy Session — clean up after task execution
+  //
+  // Each task creates a clean session via Chat Completions. After the task
+  // completes (success or failure), we destroy the session to free resources
+  // and prevent context carryover between tasks.
+  // -------------------------------------------------------------------------
+
+  async destroySession(): Promise<boolean> {
+    if (!this.lastSessionId) {
+      this.logger.debug("No session to destroy");
+      return true;
+    }
+
+    const sessionId = this.lastSessionId;
+    this.lastSessionId = null;
+
+    try {
+      const res = await fetch(`${this.baseUrl}/v1/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: this.headers(),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (res.ok || res.status === 404) {
+        this.logger.debug("Session destroyed", { sessionId });
+        return true;
+      }
+
+      this.logger.warn(`Failed to destroy session: ${res.status}`, { sessionId });
+      return false;
+    } catch (err) {
+      this.logger.warn("Session cleanup failed", {
+        sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
       return false;

@@ -21,6 +21,7 @@ import type {
   TaskArtifact,
   TaskResult,
 } from "./types.js";
+import { getEffectiveTimeout } from "./types.js";
 import { parseTaskOutput, type ParsedOutput } from "./output-parser.js";
 
 // ---------------------------------------------------------------------------
@@ -83,51 +84,106 @@ export class TaskExecutor {
 
   async execute(task: DaemonTask): Promise<TaskExecutionResult> {
     const startTime = Date.now();
-    this.logger.info(`Executing task: ${task.title}`, { taskId: task.id });
-    this.addLog("info", `Executing task: ${task.title}`, task.id, "task-executor");
+    const effectiveTimeout = getEffectiveTimeout(this.config);
 
-    // 1. Pre-flight health check
-    await this.ensureOpenClawHealthy(task.id);
+    this.logger.info(`Executing task: ${task.title} (timeout: ${effectiveTimeout}ms)`, { taskId: task.id });
+    this.addLog("info", `Executing task: ${task.title} (timeout: ${effectiveTimeout}ms, role: ${this.config.roleName || "unknown"})`, task.id, "task-executor");
 
-    // 2. Build prompt
-    const prompt = this.buildPrompt(task);
+    try {
+      // 1. Pre-flight health check
+      await this.ensureOpenClawHealthy(task.id);
 
-    // 3. Execute via OpenClaw
-    this.logger.info("Sending task to OpenClaw", { taskId: task.id });
-    const rawOutput = await this.openclaw.executeTask(prompt, this.config.taskTimeoutMs);
+      // 2. Build prompt
+      const prompt = this.buildPrompt(task);
 
-    // 4. Parse output
-    const parsed = parseTaskOutput(rawOutput);
-    const elapsedMs = Date.now() - startTime;
+      // 3. Execute via OpenClaw with role-based timeout
+      this.logger.info("Sending task to OpenClaw", { taskId: task.id });
+      const rawOutput = await this.openclaw.executeTask(prompt, effectiveTimeout);
 
-    this.logger.info(`Task executed in ${elapsedMs}ms — status: ${parsed.status}`, {
-      taskId: task.id,
-      prCount: parsed.pullRequests.length,
-      subtaskCount: parsed.subtasks.length,
-    });
+      // 4. Parse output
+      const parsed = parseTaskOutput(rawOutput);
+      const elapsedMs = Date.now() - startTime;
 
-    // 5. Build result
-    const artifacts: TaskArtifact[] = [...parsed.pullRequests];
-    const taskResult: TaskResult = {
-      status: parsed.status === "needs-input" ? "failed" : parsed.status,
-      output: parsed.summary,
-      error: parsed.status === "failed"
-        ? this.extractErrorMessage(rawOutput)
-        : parsed.status === "needs-input"
-          ? "Task requires additional input"
-          : null,
-      elapsedMs,
-      artifacts,
-    };
+      this.logger.info(`Task executed in ${elapsedMs}ms — status: ${parsed.status}`, {
+        taskId: task.id,
+        prCount: parsed.pullRequests.length,
+        subtaskCount: parsed.subtasks.length,
+      });
 
-    this.addLog(
-      taskResult.status === "completed" ? "info" : "warn",
-      `Task ${taskResult.status}: ${task.title} (${elapsedMs}ms)`,
-      task.id,
-      "task-executor",
-    );
+      // 5. Build result
+      const artifacts: TaskArtifact[] = [...parsed.pullRequests];
+      const taskResult: TaskResult = {
+        status: parsed.status === "needs-input" ? "failed" : parsed.status,
+        output: parsed.summary,
+        error: parsed.status === "failed"
+          ? this.extractErrorMessage(rawOutput)
+          : parsed.status === "needs-input"
+            ? "Task requires additional input"
+            : null,
+        elapsedMs,
+        artifacts,
+      };
 
-    return { taskResult, parsed, elapsedMs };
+      this.addLog(
+        taskResult.status === "completed" ? "info" : "warn",
+        `Task ${taskResult.status}: ${task.title} (${elapsedMs}ms)`,
+        task.id,
+        "task-executor",
+      );
+
+      return { taskResult, parsed, elapsedMs };
+    } catch (err) {
+      const elapsedMs = Date.now() - startTime;
+
+      // Check if this is a timeout error (AbortError from AbortSignal.timeout)
+      if (this.isTimeoutError(err)) {
+        this.logger.error(`Task execution timed out after ${effectiveTimeout}ms`, { taskId: task.id });
+        this.addLog("error", `Task timed out after ${effectiveTimeout}ms (role: ${this.config.roleName || "unknown"})`, task.id, "task-executor");
+
+        const taskResult: TaskResult = {
+          status: "failed",
+          output: null,
+          error: `Execution timeout after ${Math.round(effectiveTimeout / 1000)}s`,
+          elapsedMs,
+          artifacts: [],
+        };
+
+        const parsed: ParsedOutput = {
+          summary: "",
+          status: "failed",
+          pullRequests: [],
+          subtasks: [],
+          rawOutput: "",
+        };
+
+        return { taskResult, parsed, elapsedMs };
+      }
+
+      // Re-throw non-timeout errors for TaskPoller to handle
+      throw err;
+    } finally {
+      // 6. Clean up session after each task (success or failure)
+      try {
+        await this.openclaw.destroySession();
+        this.logger.debug("Session destroyed after task", { taskId: task.id });
+      } catch (cleanupErr) {
+        this.logger.warn("Session cleanup failed (non-critical)", {
+          taskId: task.id,
+          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if an error is a timeout error (from AbortSignal.timeout).
+   */
+  private isTimeoutError(err: unknown): boolean {
+    if (err instanceof Error) {
+      // AbortSignal.timeout throws a TimeoutError (DOMException)
+      return err.name === "TimeoutError" || err.name === "AbortError";
+    }
+    return false;
   }
 
   // -------------------------------------------------------------------------
