@@ -1,5 +1,120 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #56: Protocol — P2P Agent-to-Agent Communication
+
+### Summary
+Implemented the P2P communication protocol for direct agent-to-agent messaging. While the primary communication path remains the task queue (#55), P2P enables low-latency interactions for advanced scenarios: synchronous code review, brainstorming, collaborative problem-solving, and direct liveness checks between agents.
+
+### Status
+This issue was marked as **deprioritized** — the task queue handles most inter-agent communication. This implementation provides the foundational protocol, discovery mechanism, client/handler, and retry logic so P2P is ready when advanced scenarios are needed.
+
+### Done
+- **Expanded P2P Protocol Types** (`packages/protocol/src/types.ts`):
+  - `P2PMessageTypeSchema` — five message types: request, response, delegate, ping, pong
+  - `P2PMessageSchema` — full envelope with id, type, from, to, payload, timestamp, correlationId, ttlMs
+  - `P2PRequestPayloadSchema` — synchronous request (action + content + optional taskId/metadata)
+  - `P2PResponsePayloadSchema` — reply to request (success + content/error + metadata)
+  - `P2PDelegatePayloadSchema` — fire-and-forget delegation (action + content + priority)
+  - `P2PPingPayloadSchema` / `P2PPongPayloadSchema` — liveness probes with status/uptime
+  - `P2PMessageAckSchema` — delivery acknowledgment with optional inline response
+  - `AgentEndpointSchema` — discovery response (host, port, status, privateIp)
+  - `P2PRetryConfigSchema` — exponential backoff config (defaults: 3 retries, 1s→3s→9s)
+  - Legacy `MessageTypeSchema` alias maintained for backward compat
+
+- **Registry Discovery Endpoints** (`apps/registry/src/routes/discovery.ts`):
+  - `GET /api/agents/:id/endpoint` — resolve single agent's network endpoint for P2P
+  - `GET /api/agents/endpoints` — list all agent endpoints with filters (?status, ?roleId, ?teamId)
+  - Returns host, port, status, privateIp (callers on same VPC should prefer privateIp)
+  - Returns status info even for offline agents — caller decides whether to attempt communication
+
+- **P2P Client** (`packages/agent-daemon/src/p2p-client.ts`):
+  - `discover(agentId)` — resolves endpoint via registry, cached for 60s
+  - `send(targetId, type, payload, options)` — full send with discovery + retry
+  - `request()` — convenience for synchronous request-response
+  - `delegate()` — convenience for fire-and-forget delegation
+  - `ping()` — convenience for liveness check (fast timeout, 1 retry)
+  - Retry with exponential backoff: 1s → 3s → 9s (configurable)
+  - Non-retryable errors (400, 404) fail immediately
+  - Cache cleared on delivery failure (endpoint may have changed)
+  - `P2PError` with typed error codes: AGENT_NOT_FOUND, DISCOVERY_FAILED, MESSAGE_REJECTED, TIMEOUT, DELIVERY_FAILED
+  - Prefers privateIp over public host for same-VPC communication
+
+- **P2P Message Handler** (`packages/agent-daemon/src/p2p-handler.ts`):
+  - HTTP server on daemon port for incoming P2P messages
+  - `POST /message` — accepts P2P messages, validates, dispatches by type
+  - `GET /health` — health check endpoint
+  - Validates: required fields (id, type, from, to), addressing (must be for this agent), TTL expiration
+  - Ping → immediate inline pong response (no callback needed)
+  - Request → calls callback, wraps result as inline response
+  - Response → resolves pending request via correlationId
+  - Delegate → calls callback, returns ack
+  - `waitForResponse(correlationId, timeout)` — for request-response correlation
+  - Configurable max body size (default: 1MB)
+
+- **Dashboard Proxy Routes**:
+  - `GET /api/agents/:id/endpoint` → Registry
+  - `GET /api/agents/endpoints` → Registry
+
+- **82 new tests** — all passing:
+  - 47 protocol tests (`packages/protocol/src/__tests__/p2p.test.ts`):
+    - P2PMessageTypeSchema: valid types, invalid types, legacy alias
+    - P2PMessageSchema: full message, correlationId, ttlMs, invalid UUIDs, missing type, negative ttlMs, unknown payloads, null payload
+    - P2PRequestPayloadSchema: full, minimal, empty action, action > 100 chars, missing content
+    - P2PResponsePayloadSchema: success, error, minimal, missing success
+    - P2PDelegatePayloadSchema: full, minimal, empty action
+    - P2PPingPayloadSchema: with status, empty, invalid status
+    - P2PPongPayloadSchema: full, without uptimeMs, missing status, negative uptimeMs
+    - P2PMessageAckSchema: accepted, rejected, with inline response, missing accepted
+    - AgentEndpointSchema: full, without privateIp, null privateIp, all status values, invalid port
+    - P2PRetryConfigSchema: defaults, custom, max retries, multiplier, initial delay, backoff sequence
+  - 35 daemon tests (`packages/agent-daemon/src/__tests__/p2p.test.ts`):
+    - P2PClient discovery: fetch, cache, 404, server error, cache invalidation
+    - P2PClient send: discover + send, correlationId/ttlMs, retry on server error, exhausted retries, non-retryable 400, cache cleared on failure
+    - P2PClient convenience: request(), delegate(), ping()
+    - P2PError: code, instanceof, all codes
+    - P2PHandler: health check, request/delegate acceptance, ping/pong, inline response, validation (fields, empty, invalid JSON, wrong agent, expired TTL, valid TTL), 404 routes, response correlation, timeout, callback error, clean stop
+
+### Key Decisions
+- **Deprioritized but complete** — implemented the full protocol spec from the issue's "original scope" so it's ready for future use. The task queue remains the primary communication path.
+- **Message types simplified** — replaced the old task-oriented types (task:assign, task:progress, etc.) with P2P-specific types (request, response, delegate, ping, pong). Task communication goes through the queue.
+- **Discovery via registry** — agents don't know each other's IPs directly. The registry acts as a service directory. Results are cached 60s to avoid hammering the registry.
+- **Prefer privateIp** — on the same VPC, agents should communicate via private IPs for lower latency and no egress costs. The client automatically prefers privateIp when available.
+- **Inline responses** — for ping/pong and simple requests, the response is included directly in the HTTP response (no need for a separate callback). Complex async work still goes through the task queue.
+- **TTL support** — messages can include a TTL; the receiver discards expired messages. Useful for time-sensitive requests.
+- **Correlation IDs** — request/response pairs are linked via correlationId. The handler has `waitForResponse()` for async correlation.
+
+### Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/agents/:id/endpoint` | Discover agent network endpoint |
+| GET | `/api/agents/endpoints` | List all agent endpoints (filterable) |
+| POST | `http://<agent>:<port>/message` | Send P2P message to agent daemon |
+| GET | `http://<agent>:<port>/health` | Agent daemon health check |
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | Expanded P2P types: 10 new schemas |
+| `packages/protocol/src/__tests__/p2p.test.ts` | NEW — 47 tests |
+| `apps/registry/src/routes/discovery.ts` | NEW — discovery endpoints |
+| `apps/registry/src/routes.ts` | Mount discovery routes |
+| `packages/agent-daemon/src/p2p-client.ts` | NEW — P2P client with discovery + retry |
+| `packages/agent-daemon/src/p2p-handler.ts` | NEW — P2P message HTTP server |
+| `packages/agent-daemon/src/index.ts` | Export P2P modules |
+| `packages/agent-daemon/src/__tests__/p2p.test.ts` | NEW — 35 tests |
+| `apps/dashboard/src/app/api/agents/[id]/endpoint/route.ts` | NEW — proxy |
+| `apps/dashboard/src/app/api/agents/endpoints/route.ts` | NEW — proxy |
+
+### Commits
+- `4bbd1f4` — feat(protocol): P2P agent-to-agent communication protocol (#56)
+
+### Next
+- #64 (Daemon ↔ OpenClaw integration) — deeper integration, tool results, streaming
+- #50 (Dashboard) — UI for agent status and communication
+- Future: integrate P2P into daemon lifecycle (start handler on boot, use for brainstorming sessions)
+
+---
+
 ## 2026-02-10 — Issue #55: Protocol — Task Queue with Lock (Pull Model)
 
 ### Summary
