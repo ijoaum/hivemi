@@ -244,15 +244,28 @@ export class TaskExecutor {
   //
   // The daemon translates a HiveMI task into a natural message that
   // OpenClaw processes using the agent's configured model + tools + SOUL.md.
+  //
+  // Format matches the spec from Issue #64:
+  //   [HiveMI Task #abc123]
+  //   Title: Implement user authentication
+  //   Priority: high
+  //   From: PM Agent (Atlas)
+  //   ...
   // -------------------------------------------------------------------------
 
   buildPrompt(task: DaemonTask): string {
     const parts: string[] = [];
 
-    // Header with task metadata
+    // Header with task metadata (matches Issue #64 message format)
     parts.push(`[HiveMI Task #${task.id.substring(0, 8)}]`);
     parts.push(`Title: ${task.title}`);
     parts.push(`Priority: ${task.priority}`);
+
+    // Include agent role and name for context
+    if (this.config.roleName) {
+      parts.push(`Role: ${this.config.roleName}`);
+    }
+    parts.push(`Agent: ${this.config.agentName}`);
 
     if (task.parentTaskId) {
       parts.push(`Parent Task: #${task.parentTaskId.substring(0, 8)}`);

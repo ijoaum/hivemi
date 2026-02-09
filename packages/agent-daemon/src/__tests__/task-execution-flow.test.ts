@@ -92,6 +92,7 @@ function makeMockOpenClaw(): IOpenClawClient {
     healthCheck: vi.fn().mockResolvedValue("running" as OpenClawStatus),
     executeTask: vi.fn().mockResolvedValue("Task completed successfully"),
     restart: vi.fn().mockResolvedValue(true),
+    cancelExecution: vi.fn(),
     destroySession: vi.fn().mockResolvedValue(true),
   };
 }
@@ -729,7 +730,8 @@ describe("TaskPoller — Full Execution Flow", () => {
     (openclaw.restart as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
     poller.start();
-    await new Promise((r) => setTimeout(r, 500));
+    // Need enough time for 3 health check retries × 2s delay + execution overhead
+    await new Promise((r) => setTimeout(r, 8_000));
     poller.stop();
 
     expect(registry.reportTaskResult).toHaveBeenCalledWith(
@@ -742,7 +744,7 @@ describe("TaskPoller — Full Execution Flow", () => {
 
     expect(poller.tasksFailed).toBe(1);
     expect(registry.updateStatus).toHaveBeenCalledWith("idle");
-  });
+  }, 15_000);
 
   it("does not poll while executing a task (concurrency guard)", async () => {
     const task = makeTask();
@@ -940,7 +942,7 @@ describe("Session Cleanup", () => {
 
     try {
       const { OpenClawClient } = await import("../openclaw-client.js");
-      const config = makeConfig();
+      const config = makeConfig({ useStreaming: false });
       const client = new OpenClawClient(config, silentLogger);
 
       await client.executeTask("test", 30_000);
@@ -1001,7 +1003,7 @@ describe("Session Cleanup", () => {
 
     try {
       const { OpenClawClient } = await import("../openclaw-client.js");
-      const config = makeConfig();
+      const config = makeConfig({ useStreaming: false });
       const client = new OpenClawClient(config, silentLogger);
 
       await client.executeTask("test", 30_000);

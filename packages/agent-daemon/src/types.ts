@@ -71,6 +71,11 @@ export interface DaemonConfig {
   /** Max time to wait for active task during graceful shutdown (default: 55_000 = 55s).
    * Set slightly below systemd's TimeoutStopSec (60s) to leave room for cleanup. */
   shutdownTimeoutMs?: number;
+
+  /** Whether to use streaming (SSE) for task execution (default: true).
+   * Streaming prevents Node.js fetch timeout on long-running tasks (developer = 30 min).
+   * Set to false only for testing or if the OpenClaw gateway doesn't support streaming. */
+  useStreaming?: boolean;
 }
 
 /** Default timeouts per role in ms */
@@ -154,6 +159,7 @@ export function loadConfigFromEnv(env: Record<string, string | undefined>): Daem
     roleName: env["ROLE_NAME"],
     roleTimeouts: parseRoleTimeouts(env["ROLE_TIMEOUTS"]),
     shutdownTimeoutMs: optionalInt("SHUTDOWN_TIMEOUT_MS", 55_000),
+    useStreaming: env["USE_STREAMING"] !== "false",
   };
 }
 
@@ -279,11 +285,18 @@ export interface IOpenClawClient {
   /**
    * Execute a task via Chat Completions API.
    * Creates a new session, sends the prompt, and returns the response.
+   * Uses streaming (SSE) by default to handle long-running tasks.
    */
   executeTask(prompt: string, timeoutMs: number): Promise<string>;
 
   /** Attempt to restart the OpenClaw gateway */
   restart(): Promise<boolean>;
+
+  /**
+   * Cancel the currently executing task.
+   * Aborts the active HTTP request (streaming or non-streaming).
+   */
+  cancelExecution(): void;
 
   /**
    * Destroy the session created by executeTask.

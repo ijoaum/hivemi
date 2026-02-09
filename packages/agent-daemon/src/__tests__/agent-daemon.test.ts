@@ -81,6 +81,8 @@ function makeMockOpenClaw(): IOpenClawClient {
     healthCheck: vi.fn().mockResolvedValue("running" as OpenClawStatus),
     executeTask: vi.fn().mockResolvedValue("Task completed successfully"),
     restart: vi.fn().mockResolvedValue(true),
+    cancelExecution: vi.fn(),
+    destroySession: vi.fn().mockResolvedValue(true),
   };
 }
 

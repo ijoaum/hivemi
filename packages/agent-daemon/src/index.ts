@@ -425,6 +425,8 @@ if (isEntryPoint) {
 // Re-export everything for library usage
 export { RegistryClient } from "./registry-client.js";
 export { OpenClawClient } from "./openclaw-client.js";
+export { parseSSEStream } from "./openclaw-client.js";
+export type { StreamProgressCallback } from "./openclaw-client.js";
 export { TaskPoller } from "./task-poller.js";
 export { TaskExecutor, OpenClawUnavailableError } from "./task-executor.js";
 export type { TaskExecutionResult, TaskExecutorConfig } from "./task-executor.js";

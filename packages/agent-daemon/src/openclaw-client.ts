@@ -2,6 +2,11 @@
 // OpenClaw Client
 // Integrates with the local OpenClaw gateway via Chat Completions API.
 // Each task execution creates a clean session (no context carryover).
+//
+// Uses streaming (SSE) to avoid Node.js fetch timeout on long-running tasks.
+// Developer tasks can run up to 30 minutes — non-streaming fetch would hit
+// Node's internal HTTP response timeout (~5 min). Streaming keeps the
+// connection alive with incremental data chunks.
 // =============================================================================
 
 import { exec as execCb } from "node:child_process";
@@ -10,16 +15,113 @@ import type { DaemonConfig, DaemonLogger, IOpenClawClient, OpenClawStatus } from
 
 const execAsync = promisify(execCb);
 
+// ---------------------------------------------------------------------------
+// SSE Parser — extracts content from Server-Sent Events stream
+// ---------------------------------------------------------------------------
+
+/**
+ * Callback invoked for each content chunk received from the SSE stream.
+ * Used for progress tracking (e.g., logging partial output).
+ */
+export type StreamProgressCallback = (chunk: string, accumulated: string) => void;
+
+/**
+ * Parse an SSE (Server-Sent Events) stream from OpenClaw Chat Completions API.
+ *
+ * Each SSE event looks like:
+ *   data: {"id":"...","choices":[{"delta":{"content":"chunk"}}]}
+ *
+ * The stream ends with:
+ *   data: [DONE]
+ *
+ * Returns the concatenated content and the session ID (from the first chunk).
+ */
+export async function parseSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onProgress?: StreamProgressCallback,
+): Promise<{ content: string; sessionId: string | null }> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let sessionId: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete lines
+    const lines = buffer.split("\n");
+    // Keep the last potentially incomplete line in the buffer
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith(":")) continue;
+
+      // Parse data lines
+      if (trimmed.startsWith("data: ")) {
+        const data = trimmed.slice(6);
+
+        // End of stream
+        if (data === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(data) as {
+            id?: string;
+            choices?: Array<{
+              delta?: { content?: string };
+              finish_reason?: string | null;
+            }>;
+          };
+
+          // Capture session ID from first chunk
+          if (parsed.id && !sessionId) {
+            sessionId = parsed.id;
+          }
+
+          // Extract content delta
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            content += delta;
+            onProgress?.(delta, content);
+          }
+        } catch {
+          // Invalid JSON — skip this line (could be malformed SSE)
+        }
+      }
+    }
+  }
+
+  return { content, sessionId };
+}
+
+// ---------------------------------------------------------------------------
+// OpenClaw Client
+// ---------------------------------------------------------------------------
+
 export class OpenClawClient implements IOpenClawClient {
   private readonly baseUrl: string;
   private readonly apiToken?: string;
   private readonly logger: DaemonLogger;
   private lastSessionId: string | null = null;
 
+  /** Whether to use streaming for task execution (default: true) */
+  private readonly useStreaming: boolean;
+
+  /** Active AbortController for the current task (used for cancellation) */
+  private activeAbortController: AbortController | null = null;
+
   constructor(config: DaemonConfig, logger: DaemonLogger) {
     this.baseUrl = (config.openclawUrl || "http://127.0.0.1:4100").replace(/\/$/, "");
     this.apiToken = config.openclawApiToken;
     this.logger = logger;
+    // Streaming is the default — avoids Node fetch timeout on long tasks
+    this.useStreaming = config.useStreaming !== false;
   }
 
   private headers(): Record<string, string> {
@@ -30,8 +132,17 @@ export class OpenClawClient implements IOpenClawClient {
     return h;
   }
 
+  /** Get the current session ID (for testing/debugging) */
+  getSessionId(): string | null {
+    return this.lastSessionId;
+  }
+
   // -------------------------------------------------------------------------
-  // Health Check — GET /health or /v1/models
+  // Health Check — GET /v1/models
+  //
+  // Checks if the OpenClaw gateway is running and responsive.
+  // Returns "running" if OK, "error" if gateway responds with error,
+  // "stopped" if gateway is unreachable.
   // -------------------------------------------------------------------------
 
   async healthCheck(): Promise<OpenClawStatus> {
@@ -55,14 +166,112 @@ export class OpenClawClient implements IOpenClawClient {
   // Each task = one HTTP request = one clean session.
   // The daemon sends the task as a user message, OpenClaw processes it
   // with the configured model and tools, and returns the result.
+  //
+  // Uses streaming (SSE) by default to avoid Node.js fetch timeout.
+  // Long tasks (e.g., developer = 30 min) would exceed the default
+  // ~5 min response timeout of Node's HTTP layer. With streaming,
+  // the connection stays alive as OpenClaw sends incremental chunks.
   // -------------------------------------------------------------------------
 
   async executeTask(prompt: string, timeoutMs: number): Promise<string> {
-    this.logger.info("Sending task to OpenClaw Chat Completions API");
+    this.logger.info("Sending task to OpenClaw Chat Completions API", {
+      streaming: this.useStreaming,
+      timeoutMs,
+    });
 
     // Clear any previous session ID
     this.lastSessionId = null;
 
+    if (this.useStreaming) {
+      return this.executeTaskStreaming(prompt, timeoutMs);
+    }
+
+    return this.executeTaskNonStreaming(prompt, timeoutMs);
+  }
+
+  // -------------------------------------------------------------------------
+  // Streaming execution — SSE-based
+  //
+  // Sends `stream: true` to Chat Completions API and parses the SSE response.
+  // This keeps the HTTP connection alive with incremental data, preventing
+  // Node.js from timing out on long-running tasks.
+  // -------------------------------------------------------------------------
+
+  private async executeTaskStreaming(prompt: string, timeoutMs: number): Promise<string> {
+    const body = {
+      model: "default",
+      stream: true,
+      messages: [
+        {
+          role: "user" as const,
+          content: prompt,
+        },
+      ],
+    };
+
+    // Create an AbortController with timeout
+    const controller = new AbortController();
+    this.activeAbortController = controller;
+    const timeoutId = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
+
+    try {
+      const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`OpenClaw API error: ${res.status} ${text}`);
+      }
+
+      if (!res.body) {
+        throw new Error("OpenClaw returned no response body for streaming request");
+      }
+
+      // Parse the SSE stream
+      const reader = res.body.getReader();
+      let lastProgressLog = Date.now();
+
+      const { content, sessionId } = await parseSSEStream(reader, (_chunk, accumulated) => {
+        // Log progress every 30 seconds
+        const now = Date.now();
+        if (now - lastProgressLog >= 30_000) {
+          this.logger.debug(`Streaming progress: ${accumulated.length} chars received`);
+          lastProgressLog = now;
+        }
+      });
+
+      // Capture session ID for cleanup
+      if (sessionId) {
+        this.lastSessionId = sessionId;
+      }
+
+      if (!content) {
+        throw new Error("OpenClaw returned empty streaming response");
+      }
+
+      this.logger.info(`Streaming complete: ${content.length} chars received`, {
+        sessionId: sessionId?.substring(0, 8),
+      });
+
+      return content;
+    } finally {
+      clearTimeout(timeoutId);
+      this.activeAbortController = null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Non-streaming execution — single JSON response
+  //
+  // Simpler but susceptible to Node.js fetch timeout on long tasks.
+  // Used as fallback when streaming is disabled.
+  // -------------------------------------------------------------------------
+
+  private async executeTaskNonStreaming(prompt: string, timeoutMs: number): Promise<string> {
     const body = {
       model: "default",
       messages: [
@@ -71,7 +280,6 @@ export class OpenClawClient implements IOpenClawClient {
           content: prompt,
         },
       ],
-      // Let OpenClaw use its configured defaults for max_tokens, temperature, etc.
     };
 
     const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
@@ -91,7 +299,7 @@ export class OpenClawClient implements IOpenClawClient {
       choices?: Array<{ message?: { content?: string } }>;
     };
 
-    // Capture session ID for cleanup (Chat Completions returns it as `id`)
+    // Capture session ID for cleanup
     if (json.id) {
       this.lastSessionId = json.id;
     }
@@ -102,6 +310,21 @@ export class OpenClawClient implements IOpenClawClient {
     }
 
     return content;
+  }
+
+  // -------------------------------------------------------------------------
+  // Cancel — abort the current task execution
+  //
+  // Used during graceful shutdown to cancel a long-running task.
+  // The TaskExecutor handles the AbortError and marks the task as failed.
+  // -------------------------------------------------------------------------
+
+  cancelExecution(): void {
+    if (this.activeAbortController) {
+      this.logger.info("Cancelling active task execution");
+      this.activeAbortController.abort(new Error("cancelled"));
+      this.activeAbortController = null;
+    }
   }
 
   // -------------------------------------------------------------------------
