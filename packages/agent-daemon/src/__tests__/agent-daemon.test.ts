@@ -304,7 +304,7 @@ describe("TaskPoller", () => {
     poller.stop();
 
     expect(logBuffer.length).toBeGreaterThan(0);
-    expect(logBuffer.some((l) => l.component === "task-poller")).toBe(true);
+    expect(logBuffer.some((l) => l.component === "task-executor")).toBe(true);
     expect(logBuffer.some((l) => l.taskId === task.id)).toBe(true);
   });
 
