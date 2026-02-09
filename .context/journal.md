@@ -1,5 +1,87 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #61: Provisioner — DigitalOcean Implementation
+
+### Summary
+Enhanced the DigitalOcean cloud provider with rate limiting, pagination, region validation, and comprehensive tests. The provider already had a solid foundation from #44 — this issue filled the remaining gaps specified in the acceptance criteria.
+
+### Done
+- **Rate Limiting** (`api()` method):
+  - Automatic retry on HTTP 429 with exponential backoff (1s, 2s, 4s)
+  - Respects `retry-after` header from DO API when available
+  - Tracks `ratelimit-remaining` and `ratelimit-reset` from response headers
+  - Warns via logger when remaining < 100
+  - `RateLimitError` thrown after 3 retries exhausted (exposes `retryAfterMs`, `remaining`)
+  - `getRateLimitState()` method for monitoring/debugging
+
+- **Pagination** (`apiPaginated()` method):
+  - New generic paginated GET helper that follows `links.pages.next` URLs
+  - Applied to `listInstances()`, `ensureSSHKey()`, and `ensureFirewall()`
+  - Auto-appends `per_page=200` if not already in URL
+  - Handles absolute URLs from DO pagination links
+
+- **Region Validation**:
+  - Supported regions: `nyc1`, `nyc3`, `sfo3`, `ams3`, `sgp1`
+  - Validated in `createInstance()` before API call (fail fast)
+  - `UnsupportedRegionError` with helpful message listing valid regions
+  - `DigitalOceanProvider.getSupportedRegions()` static method
+  - Empty spec region falls through to `defaultRegion` (also validated)
+
+- **Exports Updated**:
+  - `RateLimitError` and `UnsupportedRegionError` exported from package index and providers index
+  - Consumers can catch specific error types for handling
+
+- **56 new tests** (`packages/provisioner/src/__tests__/digitalocean.test.ts`):
+  - Constructor: no token, defaults, custom defaults (3 tests)
+  - Size mappings: small, medium, large (3 tests)
+  - Supported regions: included, excluded (2 tests)
+  - createInstance: API request, response parsing, user_data, vpc_uuid, firewall attach, medium/large size, unsupported region, invalid region message, default region, all supported regions (11 tests)
+  - destroyInstance: DELETE request, 204 response, API error (3 tests)
+  - listInstances: by tag, no tags, multi-tag filter, pagination, size reverse-map, unknown size fallback (6 tests)
+  - getStatus: active, new→creating, off→destroyed, archive→destroyed, unknown→error, missing public IP, missing private IP (7 tests)
+  - waitReady: error state, timeout (2 tests)
+  - ensureSSHKey: existing key, create new (2 tests)
+  - ensureFirewall: update existing, create new (2 tests)
+  - addInstanceToFirewall, removeInstanceFromFirewall (2 tests)
+  - Rate limiting: retry on 429, retry-after header, max retries, state tracking, low remaining warning (5 tests)
+  - Error classes: RateLimitError, UnsupportedRegionError (2 tests)
+  - API errors: 401, 500 (2 tests)
+  - Droplet parsing: empty networks, date parsing, no tags (3 tests)
+  - Authorization: Bearer token (1 test)
+
+### Key Decisions
+- **Region validation at create time** — fail fast before making API calls. The supported set can be expanded later; starting conservative with 5 regions that DO actively supports.
+- **Max 3 retries on 429** — DO's limit is 5000/hour which is generous. If we're getting rate limited with 3 retries, something is seriously wrong and we should surface it.
+- **Pagination via `links.pages.next`** — DO provides absolute URLs for next pages. Following those is more reliable than calculating page numbers.
+- **Rate limit state exposed** — `getRateLimitState()` lets the deploy orchestrator make decisions (e.g., slow down parallel deployments when remaining is low).
+- **Tests mock globalThis.fetch** — clean mocking without network calls, validates exact API payloads and header handling.
+
+### Acceptance Criteria
+- [x] Criar droplet funciona — `createInstance()` with all options
+- [x] Destruir droplet funciona — `destroyInstance()` with 204 confirmation
+- [x] Listar por tag funciona — `listInstances(["hivemi"])` with pagination
+- [x] waitReady com poll + SSH check — polls `getStatus()` + `checkPort()` on port 22
+- [x] Rate limiting tratado — retry on 429, backoff, header tracking, RateLimitError
+- [x] Mapeamento de tamanhos abstratos — small/medium/large → DO slugs
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/provisioner/src/providers/digitalocean.ts` | Rate limiting, pagination, region validation, error classes |
+| `packages/provisioner/src/providers/index.ts` | Export RateLimitError, UnsupportedRegionError |
+| `packages/provisioner/src/index.ts` | Export RateLimitError, UnsupportedRegionError |
+| `packages/provisioner/src/__tests__/digitalocean.test.ts` | NEW — 56 tests |
+
+### Commits
+- `1ead719` — feat(provisioner): DigitalOcean provider - rate limiting, pagination, region validation (#61)
+
+### Next
+- #62 (Provisioner: GCP Implementation) — same pattern for Google Cloud
+- #63 (Deploy Orchestrator: Full Pipeline) — ties provisioner + bootstrapper together
+- #64 (Daemon ↔ OpenClaw integration) — deeper runtime integration
+
+---
+
 ## 2026-02-11 — Issue #60: Bootstrap — Secret Injection via SecretProvider
 
 ### Summary
