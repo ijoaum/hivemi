@@ -1,5 +1,104 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #64: Integração Daemon ↔ OpenClaw — Execução de Tasks
+
+### Summary
+Enhanced the Agent Daemon's integration with OpenClaw for task execution. The key addition is **streaming (SSE) support** in the OpenClawClient, which prevents Node.js fetch timeout on long-running tasks (developer tasks can run up to 30 minutes). Also enhanced prompt formatting with role/agent context, added cancellation support, and wrote comprehensive integration tests covering the full task lifecycle.
+
+### What was done
+
+1. **Streaming (SSE) Execution** (`packages/agent-daemon/src/openclaw-client.ts`):
+   - `executeTaskStreaming()` — sends `stream: true` to Chat Completions API and parses SSE response
+   - `parseSSEStream()` — exported SSE parser that concatenates content deltas from `data:` events
+   - Handles `data: [DONE]` termination, invalid JSON lines, comment lines, empty deltas
+   - `StreamProgressCallback` — optional callback for each chunk (used for progress logging every 30s)
+   - Session ID captured from first SSE chunk for cleanup
+   - Custom `AbortController` with timeout for streaming requests (replaces `AbortSignal.timeout` which doesn't work with streaming)
+   - Non-streaming fallback preserved when `useStreaming: false`
+   - **Why streaming?** Node.js `fetch` has an internal HTTP response timeout (~5 min). Developer tasks can take 30 min. With streaming, the connection stays alive via incremental data chunks.
+
+2. **Task Cancellation** (`packages/agent-daemon/src/openclaw-client.ts`):
+   - `cancelExecution()` — aborts the active HTTP request (streaming or non-streaming)
+   - Tracks `activeAbortController` for the current task
+   - Clean abort with error "cancelled" — TaskExecutor catches and handles appropriately
+   - Added to `IOpenClawClient` interface
+
+3. **Enhanced Prompt Format** (`packages/agent-daemon/src/task-executor.ts`):
+   - Prompt now includes `Role:` and `Agent:` fields matching Issue #64 spec
+   - Format: `[HiveMI Task #abc12345] / Title: ... / Priority: ... / Role: developer / Agent: Atlas`
+   - Gives OpenClaw context about which role is executing and the agent's identity
+
+4. **Configuration** (`packages/agent-daemon/src/types.ts`):
+   - `useStreaming?: boolean` — new config field (default: `true`)
+   - `USE_STREAMING` env var support (`"false"` to disable)
+   - `cancelExecution()` added to `IOpenClawClient` interface
+   - `getSessionId()` added to OpenClawClient for testing/debugging
+
+5. **67 new tests** (`packages/agent-daemon/src/__tests__/openclaw-integration.test.ts`):
+   - **SSE Parser (10 tests)**: simple stream, session ID capture, empty deltas, invalid JSON, comments, null session, progress callback, multi-line chunks, empty stream, DONE-only stream
+   - **Health Check (5 tests)**: running, error, stopped, endpoint, auth token
+   - **Streaming Execution (7 tests)**: default streaming, session ID capture, non-200 error, empty response, null body, request body format, large responses
+   - **Non-Streaming Execution (3 tests)**: configured non-streaming, session ID, empty response
+   - **Session Lifecycle (5 tests)**: create+destroy, no session, 404 graceful, clear previous, clean between tasks
+   - **Cancellation (2 tests)**: method exists, no-op when idle
+   - **Configuration (5 tests)**: default streaming, custom URL, trailing slash, useStreaming env default/false/true
+   - **Prompt Formatting (10 tests)**: task ID/title/priority, role, agent name, description, context, parent task, no parent, no role, instructions, Issue #64 format
+   - **Full Lifecycle (10 tests)**: health check, execute with prompt, session destroy, destroy after failure, parsed result, PR links, subtasks, failed status, log entries, OpenClaw restart
+   - **End-to-End (7 tests)**: poll→execute→report→cleanup, failure reporting, subtask creation, status transitions, counter tracking, OpenClaw unavailable, concurrency guard
+
+6. **Test Fixes**:
+   - Updated `makeMockOpenClaw()` in existing tests to include `cancelExecution: vi.fn()`
+   - Fixed flaky `OpenClaw unavailable` test timing (increased wait for 3 retries × 2s delay)
+   - Session cleanup tests use `useStreaming: false` to test non-streaming path directly
+
+### Key Decisions
+- **Streaming by default** — the most impactful change. Non-streaming fetch would fail on any task > 5 min (Node's HTTP timeout). Developer tasks can take 30 min. Streaming keeps the HTTP connection alive by sending incremental data chunks. This was already identified as a lesson learned in MEMORY.md.
+- **SSE parser as separate function** — exported for testability and potential reuse. The parser handles real-world SSE quirks (comments, empty lines, split chunks, invalid JSON).
+- **AbortController over AbortSignal.timeout** — `AbortSignal.timeout` is cleaner but doesn't compose well with streaming (can't distinguish timeout from connection drop). Custom AbortController gives us both timeout control and explicit cancellation via `cancelExecution()`.
+- **Non-streaming preserved** — some environments might not support SSE. Setting `USE_STREAMING=false` falls back to the original behavior. Good for testing and compatibility.
+- **Role in prompt** — adds context so OpenClaw's SOUL.md can tailor behavior per role (e.g., developer gets exec access, PM gets chat-only).
+
+### Architecture
+```
+TaskPoller (when)
+  └─ TaskExecutor (how)
+      ├─ ensureOpenClawHealthy() → healthCheck() → restart() if needed
+      ├─ buildPrompt(task) → formatted message with role/agent context
+      ├─ openclaw.executeTask(prompt, timeout)
+      │   ├─ streaming: POST /v1/chat/completions {stream:true} → SSE → parseSSEStream()
+      │   └─ non-streaming: POST /v1/chat/completions → JSON response
+      ├─ parseTaskOutput(rawOutput) → {summary, status, PRs, subtasks}
+      ├─ registry.reportTaskResult(taskId, result)
+      └─ openclaw.destroySession() → DELETE /v1/sessions/:id (cleanup)
+```
+
+### Acceptance Criteria
+- [x] Daemon creates and destroys sessions on OpenClaw — `executeTask()` creates session, `destroySession()` cleans up
+- [x] Task executed with result captured — `TaskExecutor.execute()` returns structured `TaskExecutionResult`
+- [x] Health check functional — `ensureOpenClawHealthy()` with auto-restart on failure
+- [x] Output parsed (text, PRs, subtasks) — `parseTaskOutput()` extracts all structured data
+- [x] Session clean between tasks — `destroySession()` called in `finally` block after every task
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/agent-daemon/src/openclaw-client.ts` | Streaming SSE execution, cancellation, SSE parser |
+| `packages/agent-daemon/src/task-executor.ts` | Enhanced prompt with role/agent context |
+| `packages/agent-daemon/src/types.ts` | +useStreaming config, +cancelExecution interface |
+| `packages/agent-daemon/src/index.ts` | Export parseSSEStream, StreamProgressCallback |
+| `packages/agent-daemon/src/__tests__/openclaw-integration.test.ts` | NEW — 67 tests |
+| `packages/agent-daemon/src/__tests__/task-execution-flow.test.ts` | Mock fix, timing fix |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Mock fix |
+
+### Commits
+- `c2be67a` — feat(daemon): OpenClaw integration — streaming execution, session lifecycle, health check (#64)
+
+### Next
+- #68 (Task Progress) — real-time progress tracking using streaming callbacks
+- #71+ — Further integration refinements
+
+---
+
 ## 2026-02-12 — Issue #70: Undeploy — Fluxo de Destruição de Agentes
 
 ### Summary
