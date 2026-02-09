@@ -420,6 +420,7 @@ function saveRun(issueNumber, result) {
 }
 
 function parseResult(content) {
+  // Try standard format first
   const match = content.match(
     /RESULT:\s*(success|partial|failed)[\s\S]*?COMMITS:\s*(\d+)[\s\S]*?SUMMARY:\s*(.+)/
   );
@@ -429,6 +430,15 @@ function parseResult(content) {
       commits: parseInt(match[2], 10),
       summary: match[3].trim(),
     };
+  }
+  // Fallback: check if there are git commits mentioned and signs of completion
+  const commitMatch = content.match(/(\d+)\s+(?:file|insertion|deletion)/);
+  const hasSuccess = /(?:all\s+\d+\s+tests?\s+pass|tests?\s+passing|build\s+clean|pushed?\s+to|committed)/i.test(content);
+  if (commitMatch && hasSuccess) {
+    // Extract a summary from the last meaningful line
+    const lines = content.trim().split('\n').filter(l => l.trim().length > 10);
+    const summary = lines.slice(-3).join(' ').slice(0, 200) || "Completed (auto-detected)";
+    return { status: "success", commits: 0, summary: `(auto-parsed) ${summary}` };
   }
   return { status: "unknown", commits: 0, summary: "Could not parse result" };
 }
@@ -504,6 +514,10 @@ async function runIssue(issueNumber, dryRun = false) {
   // Parse result
   const parsed = parseResult(result.content || "");
   log("info", `Result: ${parsed.status} | Commits: ${parsed.commits} | ${parsed.summary}`);
+  if (parsed.status === "unknown") {
+    const tail = (result.content || "").slice(-500);
+    log("warn", `Content tail (last 500 chars): ${tail}`);
+  }
 
   // Comment on issue with result
   const statusEmoji =
