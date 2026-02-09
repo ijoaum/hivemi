@@ -10,9 +10,11 @@ import type {
   BootstrapperLogger,
   ISecretProvider,
   SecretMapping,
+  SecretInjectionResult,
   AgentConfig,
   RoleConfig,
 } from "../types.js";
+import { parseSecretTarget, maskSecret, isRequired } from "../secrets/utils.js";
 
 const OPENCLAW_HOME = "/home/openclaw";
 const OPENCLAW_WORKSPACE = `${OPENCLAW_HOME}/.openclaw/workspace`;
@@ -23,27 +25,93 @@ const DAEMON_DIR = `${OPENCLAW_HOME}/.hivemi/daemon`;
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve secrets via the provider and write them to the daemon's .env.
- * This is called before daemon installation so the .env is ready.
+ * Resolve secrets via the provider and inject them into the VM via SSH.
  *
- * @returns Resolved secret map (envVar → value)
+ * This handles two target types:
+ * - `env:VAR_NAME` → collected for the daemon's .env file (written later by installDaemon)
+ * - `file:/path/to/file` → written directly to the VM with mode 600
+ *
+ * Security:
+ * - Secrets are resolved locally on the control plane (never stored on disk)
+ * - Values are transmitted to the VM via SSH (encrypted)
+ * - File secrets are written with permission 600
+ * - Secret values are never logged — only masked references
+ *
+ * @returns SecretInjectionResult with env secrets, file paths, and skipped refs
  */
 export async function injectSecrets(
+  ssh: ISSHClient,
   secretProvider: ISecretProvider,
   mappings: SecretMapping[],
   logger?: BootstrapperLogger,
-): Promise<Map<string, string>> {
+): Promise<SecretInjectionResult> {
+  const result: SecretInjectionResult = {
+    envSecrets: new Map(),
+    fileSecrets: [],
+    skipped: [],
+  };
+
   if (mappings.length === 0) {
     logger?.info("No secrets to inject");
-    return new Map();
+    return result;
   }
 
-  logger?.info(`Resolving ${mappings.length} secret(s) via ${secretProvider.name}`);
+  logger?.info(`Injecting ${mappings.length} secret(s) via ${secretProvider.name}`);
 
-  const resolved = await secretProvider.resolveAll(mappings);
+  for (const mapping of mappings) {
+    const target = parseSecretTarget(mapping);
+    const required = isRequired(mapping);
 
-  logger?.info(`Resolved ${resolved.size} secret(s)`);
-  return resolved;
+    let value: string;
+    try {
+      value = await secretProvider.getSecret(mapping.ref);
+    } catch (err) {
+      if (required) {
+        throw new Error(
+          `Required secret "${mapping.ref}" could not be resolved: ${(err as Error).message}`,
+        );
+      }
+      logger?.warn(`Optional secret "${mapping.ref}" not found — skipping`);
+      result.skipped.push(mapping.ref);
+      continue;
+    }
+
+    if (target.kind === "env") {
+      // Env secrets are collected and written to .env by installDaemon
+      result.envSecrets.set(target.value, value);
+      logger?.info(`Secret resolved: ${mapping.ref} → env:${target.value} [${maskSecret(value)}]`);
+    } else if (target.kind === "file") {
+      // File secrets are written directly to the VM via SSH
+      await writeSecretFile(ssh, target.value, value, logger);
+      result.fileSecrets.push(target.value);
+      logger?.info(`Secret written: ${mapping.ref} → file:${target.value}`);
+    }
+  }
+
+  const total = result.envSecrets.size + result.fileSecrets.length;
+  logger?.info(
+    `Injected ${total} secret(s) (${result.envSecrets.size} env, ${result.fileSecrets.length} file` +
+    `${result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : ""})`,
+  );
+
+  return result;
+}
+
+/**
+ * Write a secret value to a file on the VM via SSH.
+ * - Creates parent directory if needed
+ * - Sets file permissions to 600 (owner read/write only)
+ * - Uses base64 encoding to avoid shell escaping issues
+ */
+async function writeSecretFile(
+  ssh: ISSHClient,
+  remotePath: string,
+  value: string,
+  logger?: BootstrapperLogger,
+): Promise<void> {
+  // writeFile with mode 600 handles mkdir + base64 encoding + chmod
+  await ssh.writeFile(remotePath, value, "600");
+  logger?.debug(`Secret file written: ${remotePath} (mode 600)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,9 +411,10 @@ export async function configure(
 ): Promise<void> {
   // 1. Inject secrets
   callbacks?.onPhaseStart?.("inject-secrets");
-  let resolvedSecrets: Map<string, string>;
+  let injectionResult: SecretInjectionResult;
   try {
-    resolvedSecrets = await injectSecrets(
+    injectionResult = await injectSecrets(
+      ssh,
       config.secretProvider,
       config.secrets,
       logger,
@@ -385,7 +454,7 @@ export async function configure(
   // 4. Install daemon
   callbacks?.onPhaseStart?.("install-daemon");
   try {
-    await installDaemon(ssh, config, resolvedSecrets, logger);
+    await installDaemon(ssh, config, injectionResult.envSecrets, logger);
     callbacks?.onPhaseComplete?.("install-daemon");
   } catch (err) {
     callbacks?.onPhaseError?.("install-daemon", err as Error);

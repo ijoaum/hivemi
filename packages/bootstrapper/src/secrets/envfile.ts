@@ -2,10 +2,15 @@
 // EnvFile Secret Provider
 // Fallback provider that reads secrets from a local .env-style file or a map.
 // Useful for development/testing without 1Password.
+//
+// Security:
+// - The .env file should be read-only (mode 600)
+// - Values are kept in memory only — never written to disk by this provider
 // =============================================================================
 
 import { readFile } from "node:fs/promises";
 import type { ISecretProvider, SecretMapping } from "../types.js";
+import { isRequired, parseSecretTarget } from "./utils.js";
 
 /**
  * EnvFile secret provider — resolves references from a local key=value map.
@@ -66,13 +71,19 @@ export class EnvFileProvider implements ISecretProvider {
     const result = new Map<string, string>();
 
     for (const mapping of mappings) {
+      const target = parseSecretTarget(mapping);
+
       try {
         const value = await this.getSecret(mapping.ref);
-        result.set(mapping.envVar, value);
+        const key = target.kind === "env" ? target.value : target.value;
+        result.set(key, value);
       } catch (err) {
-        throw new Error(
-          `Secret resolution failed for "${mapping.ref}" → ${mapping.envVar}: ${(err as Error).message}`,
-        );
+        if (isRequired(mapping)) {
+          throw new Error(
+            `Required secret resolution failed for "${mapping.ref}" → ${target.value}: ${(err as Error).message}`,
+          );
+        }
+        // Optional secret — skip silently
       }
     }
 

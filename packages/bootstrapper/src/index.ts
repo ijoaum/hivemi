@@ -20,6 +20,8 @@ export type {
   BootstrapStatus,
   BootstrapResult,
   SecretMapping,
+  ParsedSecretTarget,
+  SecretInjectionResult,
   ISecretProvider,
   SSHExecResult,
   ISSHClient,
@@ -36,6 +38,7 @@ export { SSHClient } from "./ssh-client.js";
 // Secret Providers
 export { OnePasswordProvider } from "./secrets/onepassword.js";
 export { EnvFileProvider } from "./secrets/envfile.js";
+export { parseSecretTarget, maskSecret, isRequired } from "./secrets/utils.js";
 
 // Phases (individual, for advanced usage)
 export { generateCloudInit, waitCloudInit } from "./phases/cloud-init.js";

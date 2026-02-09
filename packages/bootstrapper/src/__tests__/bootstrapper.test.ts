@@ -305,7 +305,8 @@ describe("waitCloudInit", () => {
 // ---------------------------------------------------------------------------
 
 describe("injectSecrets", () => {
-  it("resolves all secrets via provider", async () => {
+  it("resolves all env secrets via provider", async () => {
+    const ssh = createMockSSH();
     const provider = new EnvFileProvider(
       new Map([
         ["ANTHROPIC_KEY", "sk-ant-123"],
@@ -314,34 +315,125 @@ describe("injectSecrets", () => {
     );
 
     const result = await injectSecrets(
+      ssh,
       provider,
       [
-        { ref: "ANTHROPIC_KEY", envVar: "ANTHROPIC_API_KEY" },
-        { ref: "OPENAI_KEY", envVar: "OPENAI_API_KEY" },
+        { ref: "ANTHROPIC_KEY", target: "env:ANTHROPIC_API_KEY" },
+        { ref: "OPENAI_KEY", target: "env:OPENAI_API_KEY" },
       ],
       silentLogger,
     );
 
-    expect(result.get("ANTHROPIC_API_KEY")).toBe("sk-ant-123");
-    expect(result.get("OPENAI_API_KEY")).toBe("sk-oai-456");
+    expect(result.envSecrets.get("ANTHROPIC_API_KEY")).toBe("sk-ant-123");
+    expect(result.envSecrets.get("OPENAI_API_KEY")).toBe("sk-oai-456");
+    expect(result.fileSecrets).toHaveLength(0);
+    expect(result.skipped).toHaveLength(0);
   });
 
-  it("returns empty map when no mappings", async () => {
+  it("returns empty result when no mappings", async () => {
+    const ssh = createMockSSH();
     const provider = new EnvFileProvider(new Map());
-    const result = await injectSecrets(provider, [], silentLogger);
-    expect(result.size).toBe(0);
+    const result = await injectSecrets(ssh, provider, [], silentLogger);
+    expect(result.envSecrets.size).toBe(0);
+    expect(result.fileSecrets).toHaveLength(0);
   });
 
-  it("throws when a secret is missing", async () => {
+  it("throws when a required secret is missing", async () => {
+    const ssh = createMockSSH();
     const provider = new EnvFileProvider(new Map());
 
     await expect(
       injectSecrets(
+        ssh,
         provider,
-        [{ ref: "MISSING_KEY", envVar: "MISSING" }],
+        [{ ref: "MISSING_KEY", target: "env:MISSING" }],
         silentLogger,
       ),
     ).rejects.toThrow("MISSING_KEY");
+  });
+
+  it("skips optional secrets that are not found", async () => {
+    const ssh = createMockSSH();
+    const provider = new EnvFileProvider(
+      new Map([["FOUND_KEY", "found-value"]]),
+    );
+
+    const result = await injectSecrets(
+      ssh,
+      provider,
+      [
+        { ref: "FOUND_KEY", target: "env:FOUND_VAR" },
+        { ref: "OPTIONAL_KEY", target: "env:OPTIONAL_VAR", required: false },
+      ],
+      silentLogger,
+    );
+
+    expect(result.envSecrets.get("FOUND_VAR")).toBe("found-value");
+    expect(result.envSecrets.has("OPTIONAL_VAR")).toBe(false);
+    expect(result.skipped).toContain("OPTIONAL_KEY");
+  });
+
+  it("writes file secrets to VM via SSH with mode 600", async () => {
+    const ssh = createMockSSH();
+    const provider = new EnvFileProvider(
+      new Map([["TOKEN_REF", "secret-token-value"]]),
+    );
+
+    const result = await injectSecrets(
+      ssh,
+      provider,
+      [{ ref: "TOKEN_REF", target: "file:/home/openclaw/.openclaw/secrets/token" }],
+      silentLogger,
+    );
+
+    expect(result.fileSecrets).toContain("/home/openclaw/.openclaw/secrets/token");
+    expect(result.envSecrets.size).toBe(0);
+
+    // Verify SSH writeFile was called with correct path, value, and mode
+    expect(ssh.writeFile).toHaveBeenCalledWith(
+      "/home/openclaw/.openclaw/secrets/token",
+      "secret-token-value",
+      "600",
+    );
+  });
+
+  it("handles mix of env and file targets", async () => {
+    const ssh = createMockSSH();
+    const provider = new EnvFileProvider(
+      new Map([
+        ["API_KEY", "sk-123"],
+        ["CERT_DATA", "-----BEGIN CERT-----"],
+      ]),
+    );
+
+    const result = await injectSecrets(
+      ssh,
+      provider,
+      [
+        { ref: "API_KEY", target: "env:OPENAI_API_KEY" },
+        { ref: "CERT_DATA", target: "file:/home/openclaw/.certs/ca.pem" },
+      ],
+      silentLogger,
+    );
+
+    expect(result.envSecrets.get("OPENAI_API_KEY")).toBe("sk-123");
+    expect(result.fileSecrets).toContain("/home/openclaw/.certs/ca.pem");
+  });
+
+  it("supports legacy envVar field for backward compat", async () => {
+    const ssh = createMockSSH();
+    const provider = new EnvFileProvider(
+      new Map([["OLD_KEY", "old-value"]]),
+    );
+
+    const result = await injectSecrets(
+      ssh,
+      provider,
+      [{ ref: "OLD_KEY", target: "env:LEGACY_VAR", envVar: "LEGACY_VAR" }],
+      silentLogger,
+    );
+
+    expect(result.envSecrets.get("LEGACY_VAR")).toBe("old-value");
   });
 });
 
@@ -635,8 +727,8 @@ describe("EnvFileProvider", () => {
     );
 
     const result = await provider.resolveAll([
-      { ref: "ref1", envVar: "ENV1" },
-      { ref: "ref2", envVar: "ENV2" },
+      { ref: "ref1", target: "env:ENV1" },
+      { ref: "ref2", target: "env:ENV2" },
     ]);
 
     expect(result.get("ENV1")).toBe("val1");

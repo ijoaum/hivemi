@@ -436,7 +436,7 @@ export class DeployOrchestrator extends EventEmitter {
         secrets: [
           {
             ref: process.env.HIVEMI_SECRET_REF || "HIVEMI_SECRET",
-            envVar: "HIVEMI_SECRET",
+            target: "env:HIVEMI_SECRET",
           },
         ],
         secretProvider: {
@@ -446,11 +446,12 @@ export class DeployOrchestrator extends EventEmitter {
             if (ref === "HIVEMI_SECRET") return hivemiSecret;
             return process.env[ref] || "";
           },
-          resolveAll: async (mappings: Array<{ ref: string; envVar: string }>) => {
+          resolveAll: async (mappings: Array<{ ref: string; target: string }>) => {
             const result = new Map<string, string>();
             for (const m of mappings) {
-              if (m.ref === "HIVEMI_SECRET") result.set(m.envVar, hivemiSecret);
-              else result.set(m.envVar, process.env[m.ref] || "");
+              const envVar = m.target.startsWith("env:") ? m.target.slice(4) : m.target;
+              if (m.ref === "HIVEMI_SECRET") result.set(envVar, hivemiSecret);
+              else result.set(envVar, process.env[m.ref] || "");
             }
             return result;
           },

@@ -126,12 +126,59 @@ export interface BootstrapResult {
 
 /**
  * A mapping from a secret reference to where it should be placed on the VM.
+ *
+ * Target formats:
+ * - `env:VAR_NAME` → adds VAR_NAME=value to the daemon's .env file
+ * - `file:/path/to/file` → writes value to a file on the VM (mode 600)
+ *
+ * Legacy format (envVar field) is still supported for backward compatibility.
  */
 export interface SecretMapping {
   /** Reference to the secret (e.g. "op://Vault/Item/field" or env key) */
   ref: string;
-  /** Target env var name in the daemon's .env file */
-  envVar: string;
+
+  /**
+   * Where to place the secret on the VM.
+   * - `env:VAR_NAME` → daemon .env file
+   * - `file:/path/to/file` → file on VM (mode 600)
+   */
+  target: string;
+
+  /**
+   * Whether this secret is required.
+   * If true, bootstrap fails when the secret cannot be resolved.
+   * If false, the secret is skipped silently.
+   * @default true
+   */
+  required?: boolean;
+
+  /**
+   * @deprecated Use `target` with `env:` prefix instead.
+   * Legacy field — if `target` is not set, this is used as `env:<envVar>`.
+   */
+  envVar?: string;
+}
+
+/**
+ * Parsed secret target — the result of parsing a SecretMapping's target field.
+ */
+export interface ParsedSecretTarget {
+  /** Target type */
+  kind: "env" | "file";
+  /** For env: the variable name. For file: the absolute path. */
+  value: string;
+}
+
+/**
+ * Result of resolving and injecting secrets.
+ */
+export interface SecretInjectionResult {
+  /** Environment variables resolved (envVar → value) */
+  envSecrets: Map<string, string>;
+  /** Files written to the VM (path → true) */
+  fileSecrets: string[];
+  /** Secrets that were skipped (optional + not found) */
+  skipped: string[];
 }
 
 /**
@@ -150,8 +197,9 @@ export interface ISecretProvider {
 
   /**
    * Resolve multiple secret mappings.
-   * Returns a map of envVar → secretValue.
-   * @throws if any secret cannot be resolved (includes which ref failed)
+   * Returns a map of envVar → secretValue for env targets.
+   * Skips optional secrets that cannot be resolved.
+   * @throws if any required secret cannot be resolved
    */
   resolveAll(mappings: SecretMapping[]): Promise<Map<string, string>>;
 }

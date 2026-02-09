@@ -1,10 +1,16 @@
 // =============================================================================
 // 1Password Secret Provider
-// Resolves secret references using `op read` (1Password CLI)
+// Resolves secret references using `op read` (1Password CLI).
+//
+// Security:
+// - Secrets are read locally on the control plane via the `op` CLI
+// - Values are never written to disk on the control plane (piped through memory)
+// - Service account token is passed via env var, not CLI arg
 // =============================================================================
 
 import { execFile } from "node:child_process";
 import type { ISecretProvider, SecretMapping } from "../types.js";
+import { isRequired, parseSecretTarget } from "./utils.js";
 
 /**
  * 1Password secret provider using the `op` CLI with a service account token.
@@ -65,13 +71,21 @@ export class OnePasswordProvider implements ISecretProvider {
     const result = new Map<string, string>();
 
     for (const mapping of mappings) {
+      const target = parseSecretTarget(mapping);
+
       try {
         const value = await this.getSecret(mapping.ref);
-        result.set(mapping.envVar, value);
+        // For env targets, store as envVar → value
+        // For file targets, store as filePath → value
+        const key = target.kind === "env" ? target.value : target.value;
+        result.set(key, value);
       } catch (err) {
-        throw new Error(
-          `Secret injection failed for "${mapping.ref}" → ${mapping.envVar}: ${(err as Error).message}`,
-        );
+        if (isRequired(mapping)) {
+          throw new Error(
+            `Required secret injection failed for "${mapping.ref}" → ${target.value}: ${(err as Error).message}`,
+          );
+        }
+        // Optional secret — skip silently
       }
     }
 
