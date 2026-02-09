@@ -161,15 +161,16 @@ describe("generateCloudInit", () => {
     });
 
     // Should download the script with auth
-    expect(yaml).toContain("Authorization: token $GH_TOKEN");
+    expect(yaml).toContain("Authorization: token $HIVEMI_GH_TOKEN");
     expect(yaml).toContain("hivemi-agent-bootstrap.sh");
     expect(yaml).toContain("/tmp/hivemi-agent-bootstrap.sh");
     expect(yaml).toContain("chmod +x");
 
-    // Should pass RELEASE_URL and GH_TOKEN to the script
-    expect(yaml).toContain('RELEASE_URL="https://github.com/ijoaum/hivemi/releases/download/v0.1.0"');
-    expect(yaml).toContain('GH_TOKEN="ghp_test123"');
-    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" "$GH_TOKEN"');
+    // Should export HIVEMI_RELEASE_URL and HIVEMI_GH_TOKEN as env vars
+    expect(yaml).toContain('HIVEMI_RELEASE_URL="https://github.com/ijoaum/hivemi/releases/download/v0.1.0"');
+    expect(yaml).toContain('HIVEMI_GH_TOKEN="ghp_test123"');
+    // Script is called without positional args (reads env vars)
+    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh 2>&1');
 
     // Should log to hivemi-bootstrap.log
     expect(yaml).toContain("/var/log/hivemi-bootstrap.log");
@@ -188,7 +189,7 @@ describe("generateCloudInit", () => {
     // Should download without Authorization header
     expect(yaml).not.toContain("Authorization: token");
     expect(yaml).toContain("hivemi-agent-bootstrap.sh");
-    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL"');
+    expect(yaml).toContain('/tmp/hivemi-agent-bootstrap.sh 2>&1');
 
     // Should NOT include legacy OpenClaw install
     expect(yaml).not.toContain("openclaw.ai/install.sh");
@@ -252,7 +253,7 @@ describe("generateCloudInit", () => {
 
     // Bootstrap
     expect(yaml).toContain("hivemi-agent-bootstrap.sh");
-    expect(yaml).toContain('GH_TOKEN="ghp_fulltest456"');
+    expect(yaml).toContain('HIVEMI_GH_TOKEN="ghp_fulltest456"');
 
     // Completion
     expect(yaml).toContain("hivemi-cloud-init-done");

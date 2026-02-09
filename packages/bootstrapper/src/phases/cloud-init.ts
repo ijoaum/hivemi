@@ -53,23 +53,24 @@ function bootstrapRunCmd(context: CloudInitContext): string {
 
   if (releaseUrl && ghToken) {
     // Download bootstrap script from GitHub Release (private repo)
+    // Pass HIVEMI_RELEASE_URL and HIVEMI_GH_TOKEN as env vars (not positional args)
     lines.push(`  - |`);
-    lines.push(`    export RELEASE_URL="${releaseUrl}"`);
-    lines.push(`    export GH_TOKEN="${ghToken}"`);
+    lines.push(`    export HIVEMI_RELEASE_URL="${releaseUrl}"`);
+    lines.push(`    export HIVEMI_GH_TOKEN="${ghToken}"`);
     lines.push(`    SCRIPT_URL="${releaseUrl}/hivemi-agent-bootstrap.sh"`);
     lines.push(`    echo "Downloading bootstrap script from $SCRIPT_URL"`);
     lines.push(`    curl -fsSL \\`);
-    lines.push(`      -H "Authorization: token $GH_TOKEN" \\`);
+    lines.push(`      -H "Authorization: token $HIVEMI_GH_TOKEN" \\`);
     lines.push(`      -H "Accept: application/octet-stream" \\`);
     lines.push(`      -o /tmp/hivemi-agent-bootstrap.sh \\`);
     lines.push(`      "$SCRIPT_URL"`);
     lines.push(`    chmod +x /tmp/hivemi-agent-bootstrap.sh`);
     lines.push(`    echo "Running bootstrap script..."`);
-    lines.push(`    /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" "$GH_TOKEN" 2>&1 | tee /var/log/hivemi-bootstrap.log`);
+    lines.push(`    /tmp/hivemi-agent-bootstrap.sh 2>&1 | tee /var/log/hivemi-bootstrap.log`);
   } else if (releaseUrl) {
     // Public repo — no auth header needed
     lines.push(`  - |`);
-    lines.push(`    export RELEASE_URL="${releaseUrl}"`);
+    lines.push(`    export HIVEMI_RELEASE_URL="${releaseUrl}"`);
     lines.push(`    SCRIPT_URL="${releaseUrl}/hivemi-agent-bootstrap.sh"`);
     lines.push(`    echo "Downloading bootstrap script from $SCRIPT_URL"`);
     lines.push(`    curl -fsSL \\`);
@@ -78,7 +79,7 @@ function bootstrapRunCmd(context: CloudInitContext): string {
     lines.push(`      "$SCRIPT_URL"`);
     lines.push(`    chmod +x /tmp/hivemi-agent-bootstrap.sh`);
     lines.push(`    echo "Running bootstrap script..."`);
-    lines.push(`    /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" 2>&1 | tee /var/log/hivemi-bootstrap.log`);
+    lines.push(`    /tmp/hivemi-agent-bootstrap.sh 2>&1 | tee /var/log/hivemi-bootstrap.log`);
   } else {
     // Legacy fallback: direct OpenClaw install (no bootstrap script)
     lines.push(`  - |`);
