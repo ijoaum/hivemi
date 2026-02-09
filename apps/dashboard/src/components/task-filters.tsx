@@ -14,7 +14,7 @@ interface TaskFiltersProps {
 const statusOptions: { value: TaskStatus | "all"; label: string; color: string }[] = [
   { value: "all", label: "All", color: "bg-gray-600" },
   { value: "queued", label: "Queued", color: "bg-gray-500" },
-  { value: "running", label: "Running", color: "bg-blue-500" },
+  { value: "locked", label: "Active", color: "bg-blue-500" },
   { value: "completed", label: "Completed", color: "bg-green-500" },
   { value: "failed", label: "Failed", color: "bg-red-500" },
 ];

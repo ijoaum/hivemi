@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "file-read",
+      "description": "Read files from the project workspace",
+      "enabled": true
+    },
+    {
+      "name": "file-write",
+      "description": "Write or modify files in the project workspace",
+      "enabled": true
+    },
+    {
+      "name": "shell-exec",
+      "description": "Execute shell commands for builds, tests, git operations",
+      "enabled": true
+    },
+    {
+      "name": "query-tasks",
+      "description": "Query tasks for context and dependencies",
+      "enabled": true
+    }
+  ]
+}

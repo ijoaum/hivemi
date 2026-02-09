@@ -31,9 +31,10 @@ function formatTime(ms: number): string {
   return `${seconds}s`;
 }
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date | string): string {
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diff = now.getTime() - d.getTime();
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
   
@@ -73,7 +74,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       </div>
 
       {/* Progress bar for running tasks */}
-      {task.status === "running" && task.estimatedMs && (
+      {task.status === "locked" && task.estimatedMs && (
         <div className="mb-3">
           <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
             <div

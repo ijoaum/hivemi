@@ -3,15 +3,30 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React, { useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { 
+  Users, 
+  ClipboardList, 
+  Theater, 
+  Settings, 
+  ScrollText,
+  Menu,
+  X,
+  Network,
+  Sun,
+  Moon,
+  Loader2
+} from "lucide-react";
+import { useTheme } from "@/components/theme-provider";
 
 const navItems = [
-  { href: "/", label: "Agents", icon: "👥" },
-  { href: "/tasks", label: "Tasks", icon: "📋" },
-  { href: "/roles", label: "Roles", icon: "🎭" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
-  { href: "/logs", label: "Logs", icon: "📜" },
+  { href: "/", label: "Agents", icon: Users },
+  { href: "/tasks", label: "Tasks", icon: ClipboardList },
+  { href: "/teams", label: "Teams", icon: Network },
+  { href: "/roles", label: "Roles", icon: Theater },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/logs", label: "Logs", icon: ScrollText },
 ];
 
 interface SidebarProps {
@@ -21,16 +36,25 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   const prevPathname = React.useRef(pathname);
 
-  // Close sidebar on route change (mobile)
+  // Clear navigating state when route changes
   useEffect(() => {
-    if (prevPathname.current !== pathname && onClose) {
-      onClose();
+    if (prevPathname.current !== pathname) {
+      setNavigatingTo(null);
+      if (onClose) onClose();
     }
     prevPathname.current = pathname;
   }, [pathname, onClose]);
+
+  const handleNavClick = useCallback((href: string) => {
+    if (href !== pathname) {
+      setNavigatingTo(href);
+    }
+  }, [pathname]);
 
   return (
     <>
@@ -56,7 +80,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white md:hidden"
         >
-          ✕
+          <X className="w-5 h-5" />
         </button>
 
         {/* Logo */}
@@ -78,18 +102,27 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <nav className="flex-1 space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const isNavigating = navigatingTo === item.href;
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => handleNavClick(item.href)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150",
                   isActive
                     ? "bg-amber-500/20 text-amber-400"
+                    : isNavigating
+                    ? "bg-amber-500/10 text-amber-300 scale-[0.98]"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 )}
               >
-                <span>{item.icon}</span>
+                {isNavigating ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Icon className="w-5 h-5" />
+                )}
                 <span className="font-medium">{item.label}</span>
               </Link>
             );
@@ -98,6 +131,23 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
         {/* Footer */}
         <div className="pt-4 border-t border-gray-800">
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            {theme === "dark" ? (
+              <>
+                <Sun className="w-5 h-5" />
+                <span className="font-medium text-sm">Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-5 h-5" />
+                <span className="font-medium text-sm">Dark Mode</span>
+              </>
+            )}
+          </button>
           <div className="px-3 py-2 text-xs text-gray-500">
             <p>Cluster: <span className="text-gray-400">local-dev</span></p>
             <p>Version: <span className="text-gray-400">0.1.0</span></p>
@@ -116,9 +166,7 @@ export function MobileHeader({ onMenuClick }: { onMenuClick: () => void }) {
         onClick={onMenuClick}
         className="p-2 -ml-2 text-gray-400 hover:text-white"
       >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
+        <Menu className="w-6 h-6" />
       </button>
       <div className="flex items-center gap-2 ml-2">
         <Image

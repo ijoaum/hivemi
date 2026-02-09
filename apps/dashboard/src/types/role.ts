@@ -6,6 +6,7 @@ export interface Role {
   icon: string;
   color: string;
   capabilities: string[];
-  systemPromptPreview: string;
+  systemPrompt: string;
+  systemPromptPreview?: string;
   agentCount: number;
 }

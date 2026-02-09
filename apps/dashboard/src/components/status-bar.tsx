@@ -7,7 +7,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ agents }: StatusBarProps) {
-  const online = agents.filter(a => a.status !== "offline").length;
+  const online = agents.filter(a => a.status === "idle" || a.status === "working").length;
   const working = agents.filter(a => a.status === "working").length;
   const idle = agents.filter(a => a.status === "idle").length;
   const error = agents.filter(a => a.status === "error").length;

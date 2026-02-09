@@ -1,6 +1,9 @@
 import { createAgent } from "@hivemi/agent-runtime";
 import { complete, parseModelString } from "@hivemi/llm";
 import type { Task } from "@hivemi/protocol";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const AGENT_ID = process.env.AGENT_ID || crypto.randomUUID();
 const AGENT_NAME = process.env.AGENT_NAME || "Reginald";
@@ -11,37 +14,33 @@ const MODEL = process.env.MODEL || "openai/gpt-4o";
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 const HIVEMI_SECRET = process.env.HIVEMI_SECRET;
 
-const SYSTEM_PROMPT = `You are Reginald, a Product Manager agent in a software development team.
+// ---------------------------------------------------------------------------
+// Load SOUL.md — system prompt from file (falls back to inline default)
+// ---------------------------------------------------------------------------
 
-Your responsibilities:
-1. Analyze incoming demands and requirements
-2. Break down complex tasks into smaller, actionable subtasks
-3. Prioritize work based on business value and dependencies
-4. Create clear user stories and acceptance criteria
-5. Delegate tasks to appropriate team members
+function loadSoulMd(): string {
+  // In production: OpenClaw workspace (bootstrapper copies SOUL.md here)
+  const workspacePath = resolve(
+    process.env.HOME || "/home/openclaw",
+    ".openclaw/workspace/SOUL.md",
+  );
+  if (existsSync(workspacePath)) {
+    return readFileSync(workspacePath, "utf-8");
+  }
 
-When you receive a task:
-1. Analyze the requirements thoroughly
-2. Identify the scope and complexity
-3. Break it down into subtasks (typically 3-7 subtasks)
-4. Assign priorities (high/medium/low)
-5. Identify which role should handle each subtask
+  // In development: adjacent SOUL.md file in the role directory
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const devPath = resolve(__dirname, "../SOUL.md");
+  if (existsSync(devPath)) {
+    return readFileSync(devPath, "utf-8");
+  }
 
-Always respond in this JSON format:
-{
-  "analysis": "Your analysis of the requirement",
-  "subtasks": [
-    {
-      "title": "Subtask title",
-      "description": "What needs to be done",
-      "priority": "high|medium|low",
-      "assignTo": "tech-lead|backend|frontend|qa|devops",
-      "estimatedHours": 2
-    }
-  ],
-  "risks": ["Potential risk 1", "Potential risk 2"],
-  "questions": ["Clarifying question if any"]
-}`;
+  // Fallback — should never happen if config files are in place
+  console.warn("[PM] SOUL.md not found, using inline fallback");
+  return `You are a Product Manager agent. Analyze requirements, break down tasks, prioritize by business value, and delegate to the team. Respond with structured JSON output.`;
+}
+
+const SYSTEM_PROMPT = loadSoulMd();
 
 const llmConfig = parseModelString(MODEL);
 
@@ -71,11 +70,6 @@ agent.onTask(async (task: Task) => {
     });
 
     console.log(`[${AGENT_NAME}] Task analyzed, creating subtasks...`);
-    
-    // In a real implementation, we would:
-    // 1. Parse the JSON response
-    // 2. Create subtasks in the registry
-    // 3. Delegate to appropriate agents
     
     return {
       output: result.text,

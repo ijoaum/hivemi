@@ -31,7 +31,7 @@ export interface Agent {
   name: string;
   roleId: string;
   teamId: string;
-  status: "online" | "offline" | "working" | "idle" | "error";
+  status: "provisioning" | "idle" | "working" | "offline" | "unreachable" | "error" | "destroyed";
   model: string;
   host: string;
   port: number;
@@ -39,6 +39,22 @@ export interface Agent {
   lastHeartbeat: string | null;
   createdAt: string;
   updatedAt: string;
+  // Populated from JOIN
+  role?: {
+    id: string;
+    name: string;
+    slug: string;
+    icon: string;
+    color: string;
+    description: string;
+    capabilities: string[];
+  } | null;
+  team?: {
+    id: string;
+    name: string;
+    emoji: string;
+    color: string;
+  } | null;
 }
 
 export const agentsApi = {
@@ -104,6 +120,13 @@ export const teamsApi = {
     method: "POST",
     body: JSON.stringify(data),
   }),
+  update: (id: string, data: Partial<Team>) => fetchApi<Team>(`/api/teams/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }),
+  delete: (id: string) => fetchApi<Team>(`/api/teams/${id}`, {
+    method: "DELETE",
+  }),
 };
 
 // Tasks
@@ -111,7 +134,7 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: "queued" | "locked" | "completed" | "failed" | "cancelling" | "cancelled";
   priority: "high" | "medium" | "low";
   agentId: string | null;
   teamId: string;
@@ -145,13 +168,16 @@ export const tasksApi = {
   cancel: (id: string) => fetchApi<Task>(`/api/tasks/${id}/cancel`, {
     method: "POST",
   }),
+  delete: (id: string) => fetchApi<Task>(`/api/tasks/${id}`, {
+    method: "DELETE",
+  }),
 };
 
 // Logs
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: "debug" | "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error" | "lifecycle";
   source: string;
   agentId: string | null;
   taskId: string | null;
@@ -160,8 +186,14 @@ export interface LogEntry {
 }
 
 export const logsApi = {
-  list: (params?: { limit?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+  list: (params?: { limit?: number; agentId?: string; level?: string; from?: string; to?: string }) => {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) cleanParams[k] = String(v);
+      }
+    }
+    const query = new URLSearchParams(cleanParams).toString();
     return fetchApi<LogEntry[]>(`/api/logs${query ? `?${query}` : ""}`);
   },
 };
@@ -191,4 +223,54 @@ export const demandsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+};
+
+// Infra — Reconciliation & Costs
+export interface ReconciliationIssue {
+  type: "orphaned_vm" | "phantom_agent" | "ip_mismatch";
+  severity: "warning" | "error";
+  message: string;
+  instanceId?: string;
+  instanceName?: string;
+  agentId?: string;
+  agentName?: string;
+}
+
+export interface ReconciliationReport {
+  issues: ReconciliationIssue[];
+  status: "clean" | "warning" | "critical";
+  timestamp: string;
+  provider: string;
+  stats: {
+    totalVMs: number;
+    healthy: number;
+    orphaned: number;
+    phantom: number;
+    ipMismatches: number;
+  };
+}
+
+export interface InstanceCostBreakdown {
+  name: string;
+  size: "small" | "medium" | "large";
+  monthlyCostUsd: number;
+  daysRunning: number;
+  accumulatedCostUsd: number;
+}
+
+export interface CostReport {
+  monthly: number;
+  projected: number;
+  accumulated: number;
+  breakdown: InstanceCostBreakdown[];
+  provider: string;
+  generatedAt: string;
+}
+
+export const infraApi = {
+  reconcile: () => fetchApi<ReconciliationReport>("/api/infra/reconcile"),
+  costs: () => fetchApi<CostReport>("/api/infra/costs"),
+  destroyOrphan: (instanceId: string) => fetchApi<{ message: string }>(`/api/infra/reconcile/orphan/${instanceId}`, {
+    method: "DELETE",
+  }),
 };

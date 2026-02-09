@@ -39,3 +39,6 @@ coverage/
 # Temp
 tmp/
 temp/
+
+# Issue runner artifacts
+.context/runs/

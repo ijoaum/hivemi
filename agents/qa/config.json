@@ -1,0 +1,6 @@
+{
+  "model": "openai/gpt-4o",
+  "maxTokens": 4096,
+  "temperature": 0.3,
+  "timeout": 300000
+}

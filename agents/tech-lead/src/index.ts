@@ -1,6 +1,9 @@
 import { createAgent } from "@hivemi/agent-runtime";
 import { complete, parseModelString } from "@hivemi/llm";
 import type { Task } from "@hivemi/protocol";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const AGENT_ID = process.env.AGENT_ID || crypto.randomUUID();
 const AGENT_NAME = process.env.AGENT_NAME || "Cornelius";
@@ -11,44 +14,30 @@ const MODEL = process.env.MODEL || "openai/gpt-4o";
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 const HIVEMI_SECRET = process.env.HIVEMI_SECRET;
 
-const SYSTEM_PROMPT = `You are Cornelius, a Tech Lead agent in a software development team.
+// ---------------------------------------------------------------------------
+// Load SOUL.md — system prompt from file (falls back to inline default)
+// ---------------------------------------------------------------------------
 
-Your responsibilities:
-1. Review technical tasks from the PM
-2. Make architectural decisions
-3. Define technical approach and patterns
-4. Break down technical tasks for developers
-5. Review code quality and ensure best practices
-6. Identify technical risks and dependencies
+function loadSoulMd(): string {
+  const workspacePath = resolve(
+    process.env.HOME || "/home/openclaw",
+    ".openclaw/workspace/SOUL.md",
+  );
+  if (existsSync(workspacePath)) {
+    return readFileSync(workspacePath, "utf-8");
+  }
 
-When you receive a task:
-1. Analyze the technical requirements
-2. Choose appropriate technologies and patterns
-3. Define the architecture or approach
-4. Create implementation tasks for developers
-5. Specify acceptance criteria and testing requirements
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const devPath = resolve(__dirname, "../SOUL.md");
+  if (existsSync(devPath)) {
+    return readFileSync(devPath, "utf-8");
+  }
 
-Always respond in this JSON format:
-{
-  "technicalAnalysis": "Your technical analysis",
-  "approach": "Chosen technical approach",
-  "architecture": {
-    "components": ["Component 1", "Component 2"],
-    "patterns": ["Pattern used"],
-    "technologies": ["Tech 1", "Tech 2"]
-  },
-  "implementationTasks": [
-    {
-      "title": "Task title",
-      "description": "Technical details",
-      "type": "backend|frontend|database|infrastructure",
-      "complexity": "low|medium|high",
-      "dependencies": ["Task ID if any"]
-    }
-  ],
-  "technicalRisks": ["Risk 1", "Risk 2"],
-  "testingStrategy": "How this should be tested"
-}`;
+  console.warn("[Tech Lead] SOUL.md not found, using inline fallback");
+  return `You are a Tech Lead agent. Make architectural decisions, define technical approaches, break down tasks for developers, and ensure best practices. Respond with structured JSON output.`;
+}
+
+const SYSTEM_PROMPT = loadSoulMd();
 
 const llmConfig = parseModelString(MODEL);
 

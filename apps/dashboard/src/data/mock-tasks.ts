@@ -22,7 +22,7 @@ export const mockTasks: Task[] = [
   {
     id: "task-002",
     title: "Design database schema for agents table",
-    status: "running",
+    status: "locked",
     priority: "high",
     agentId: "agent-2",
     agentName: "Cornelius",
@@ -48,7 +48,7 @@ export const mockTasks: Task[] = [
   {
     id: "task-004",
     title: "Review PR #42: Add agent heartbeat",
-    status: "running",
+    status: "locked",
     priority: "medium",
     agentId: "agent-3",
     agentName: "Gwendolyn",

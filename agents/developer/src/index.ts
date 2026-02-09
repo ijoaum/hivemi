@@ -1,6 +1,9 @@
 import { createAgent } from "@hivemi/agent-runtime";
 import { complete, parseModelString } from "@hivemi/llm";
 import type { Task } from "@hivemi/protocol";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const AGENT_ID = process.env.AGENT_ID || crypto.randomUUID();
 const AGENT_NAME = process.env.AGENT_NAME || "Bartholomew";
@@ -11,21 +14,30 @@ const MODEL = process.env.MODEL || "openai/gpt-4o";
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 const HIVEMI_SECRET = process.env.HIVEMI_SECRET;
 
-const SYSTEM_PROMPT = `You are Bartholomew, a senior backend developer agent.
-You write clean, efficient, and well-documented code.
-You follow best practices and design patterns.
-You communicate clearly and concisely.
+// ---------------------------------------------------------------------------
+// Load SOUL.md — system prompt from file (falls back to inline default)
+// ---------------------------------------------------------------------------
 
-When given a task:
-1. Analyze the requirements
-2. Break down the implementation steps
-3. Write the code
-4. Explain your decisions
+function loadSoulMd(): string {
+  const workspacePath = resolve(
+    process.env.HOME || "/home/openclaw",
+    ".openclaw/workspace/SOUL.md",
+  );
+  if (existsSync(workspacePath)) {
+    return readFileSync(workspacePath, "utf-8");
+  }
 
-Always respond with structured output including:
-- analysis: Your understanding of the task
-- implementation: The code or solution
-- notes: Any important considerations`;
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const devPath = resolve(__dirname, "../SOUL.md");
+  if (existsSync(devPath)) {
+    return readFileSync(devPath, "utf-8");
+  }
+
+  console.warn("[Developer] SOUL.md not found, using inline fallback");
+  return `You are a senior Developer agent. Write clean, efficient, well-documented code. Follow best practices. Respond with structured JSON output.`;
+}
+
+const SYSTEM_PROMPT = loadSoulMd();
 
 const llmConfig = parseModelString(MODEL);
 
@@ -71,7 +83,6 @@ agent.onMessage(async (message) => {
   console.log(`[${AGENT_NAME}] Received message:`, message.type);
   
   if (message.type === "agent:request") {
-    // Handle inter-agent requests
     const payload = message.payload as { question?: string };
     
     if (payload.question) {
@@ -87,13 +98,11 @@ agent.onMessage(async (message) => {
   return { received: true };
 });
 
-// Start the agent
 agent.start().catch((err) => {
   console.error("Failed to start agent:", err);
   process.exit(1);
 });
 
-// Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
   await agent.stop();

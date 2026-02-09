@@ -2,19 +2,31 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 import { db, agents, roles, teams, tasks, logs } from "./db/index.js";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 import { 
-  CreateAgentSchema, 
   CreateRoleSchema, 
-  CreateTaskSchema 
+  CreateTaskSchema,
+  authMiddleware, 
 } from "@hivemi/protocol";
+import agentRegistration from "./routes/agents.js";
+import heartbeatRoutes from "./routes/heartbeat.js";
+import cloudSettings from "./routes/cloud-settings.js";
+import telemetryRoutes from "./routes/telemetry.js";
+import deployRoutes from "./routes/deploys.js";
+import taskQueueRoutes from "./routes/tasks.js";
+import discoveryRoutes from "./routes/discovery.js";
+import logRoutes from "./routes/logs.js";
 
 const app = new Hono();
 
 // Middleware
 app.use("*", cors());
 app.use("*", honoLogger());
+
+// HIVEMI_SECRET auth — validates Bearer token on all /api/* routes.
+// Skips /health for load balancer probes. In dev (no HIVEMI_SECRET), allows all.
+app.use("/api/*", authMiddleware);
 
 // =============================================================================
 // HEALTH
@@ -125,9 +137,50 @@ app.delete("/api/roles/:id", async (c) => {
 // AGENTS
 // =============================================================================
 
+// Agent registration (POST /api/agents) — upsert with validation
+app.route("/api/agents", agentRegistration);
+
+// Agent heartbeat (POST /api/agents/:id/heartbeat) — liveness + status
+app.route("/api/agents", heartbeatRoutes);
+
+// Agent discovery (GET /api/agents/:id/endpoint, GET /api/agents/endpoints) — P2P
+app.route("/api/agents", discoveryRoutes);
+
 app.get("/api/agents", async (c) => {
   try {
-    const result = await db.select().from(agents);
+    const result = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        roleId: agents.roleId,
+        teamId: agents.teamId,
+        status: agents.status,
+        model: agents.model,
+        host: agents.host,
+        port: agents.port,
+        currentTaskId: agents.currentTaskId,
+        lastHeartbeat: agents.lastHeartbeat,
+        createdAt: agents.createdAt,
+        updatedAt: agents.updatedAt,
+        role: {
+          id: roles.id,
+          name: roles.name,
+          slug: roles.slug,
+          icon: roles.icon,
+          color: roles.color,
+          description: roles.description,
+          capabilities: roles.capabilities,
+        },
+        team: {
+          id: teams.id,
+          name: teams.name,
+          emoji: teams.emoji,
+          color: teams.color,
+        },
+      })
+      .from(agents)
+      .leftJoin(roles, eq(agents.roleId, roles.id))
+      .leftJoin(teams, eq(agents.teamId, teams.id));
     return c.json({ success: true, data: result });
   } catch (error) {
     logger.error(error, "Failed to fetch agents");
@@ -138,7 +191,40 @@ app.get("/api/agents", async (c) => {
 app.get("/api/agents/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    const result = await db.select().from(agents).where(eq(agents.id, id));
+    const result = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        roleId: agents.roleId,
+        teamId: agents.teamId,
+        status: agents.status,
+        model: agents.model,
+        host: agents.host,
+        port: agents.port,
+        currentTaskId: agents.currentTaskId,
+        lastHeartbeat: agents.lastHeartbeat,
+        createdAt: agents.createdAt,
+        updatedAt: agents.updatedAt,
+        role: {
+          id: roles.id,
+          name: roles.name,
+          slug: roles.slug,
+          icon: roles.icon,
+          color: roles.color,
+          description: roles.description,
+          capabilities: roles.capabilities,
+        },
+        team: {
+          id: teams.id,
+          name: teams.name,
+          emoji: teams.emoji,
+          color: teams.color,
+        },
+      })
+      .from(agents)
+      .leftJoin(roles, eq(agents.roleId, roles.id))
+      .leftJoin(teams, eq(agents.teamId, teams.id))
+      .where(eq(agents.id, id));
     if (result.length === 0) {
       return c.json({ success: false, error: "Agent not found" }, 404);
     }
@@ -146,19 +232,6 @@ app.get("/api/agents/:id", async (c) => {
   } catch (error) {
     logger.error(error, "Failed to fetch agent");
     return c.json({ success: false, error: "Failed to fetch agent" }, 500);
-  }
-});
-
-app.post("/api/agents", async (c) => {
-  try {
-    const body = await c.req.json();
-    const parsed = CreateAgentSchema.parse(body);
-    const result = await db.insert(agents).values(parsed).returning();
-    logger.info({ agent: result[0] }, "Agent created");
-    return c.json({ success: true, data: result[0] }, 201);
-  } catch (error) {
-    logger.error(error, "Failed to create agent");
-    return c.json({ success: false, error: "Failed to create agent" }, 500);
   }
 });
 
@@ -195,35 +268,41 @@ app.delete("/api/agents/:id", async (c) => {
   }
 });
 
-app.post("/api/agents/:id/heartbeat", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const result = await db.update(agents)
-      .set({ lastHeartbeat: new Date(), status: "idle" })
-      .where(eq(agents.id, id))
-      .returning();
-    if (result.length === 0) {
-      return c.json({ success: false, error: "Agent not found" }, 404);
-    }
-    return c.json({ success: true, data: result[0] });
-  } catch (error) {
-    logger.error(error, "Failed to update heartbeat");
-    return c.json({ success: false, error: "Failed to update heartbeat" }, 500);
-  }
-});
+// =============================================================================
+// TASKS — Queue endpoints (Issue #55)
+// =============================================================================
+
+// Mount task queue routes FIRST — /api/tasks/next, /api/tasks/:id/complete, /api/tasks/:id/subtasks
+// These use SELECT FOR UPDATE SKIP LOCKED for atomic task claiming
+app.route("/api/tasks", taskQueueRoutes);
 
 // =============================================================================
-// TASKS
+// TASKS — CRUD (existing)
 // =============================================================================
 
 app.get("/api/tasks", async (c) => {
   try {
-    // Query params for future filtering
-    void c.req.query("status");
-    void c.req.query("teamId");
+    const status = c.req.query("status");
+    const teamId = c.req.query("teamId");
+    const roleTarget = c.req.query("roleTarget");
+    const limit = c.req.query("limit");
     
-    // TODO: Add filtering by status and teamId
-    const result = await db.select().from(tasks);
+    let query = db.select().from(tasks).orderBy(desc(tasks.createdAt)).$dynamic();
+    
+    if (status) {
+      query = query.where(eq(tasks.status, status as any));
+    }
+    if (teamId) {
+      query = query.where(eq(tasks.teamId, teamId));
+    }
+    if (roleTarget) {
+      query = query.where(eq(tasks.roleTarget, roleTarget));
+    }
+    if (limit) {
+      query = query.limit(Math.min(parseInt(limit), 500));
+    }
+    
+    const result = await query;
     return c.json({ success: true, data: result });
   } catch (error) {
     logger.error(error, "Failed to fetch tasks");
@@ -280,7 +359,16 @@ app.post("/api/tasks/:id/retry", async (c) => {
   try {
     const id = c.req.param("id");
     const result = await db.update(tasks)
-      .set({ status: "queued", error: null, startedAt: null, completedAt: null })
+      .set({
+        status: "queued",
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        // Clear lock fields on retry — task goes back to queue
+        lockedBy: null,
+        lockedAt: null,
+        agentId: null,
+      })
       .where(eq(tasks.id, id))
       .returning();
     if (result.length === 0) {
@@ -298,7 +386,13 @@ app.post("/api/tasks/:id/cancel", async (c) => {
   try {
     const id = c.req.param("id");
     const result = await db.update(tasks)
-      .set({ status: "cancelled", completedAt: new Date() })
+      .set({
+        status: "cancelled",
+        completedAt: new Date(),
+        // Clear lock fields on cancel
+        lockedBy: null,
+        lockedAt: null,
+      })
       .where(eq(tasks.id, id))
       .returning();
     if (result.length === 0) {
@@ -312,30 +406,44 @@ app.post("/api/tasks/:id/cancel", async (c) => {
   }
 });
 
-// =============================================================================
-// LOGS
-// =============================================================================
-
-app.get("/api/logs", async (c) => {
+app.delete("/api/tasks/:id", async (c) => {
   try {
-    const limit = parseInt(c.req.query("limit") || "100");
-    const result = await db.select().from(logs).limit(limit);
-    return c.json({ success: true, data: result });
+    const id = c.req.param("id");
+    const result = await db.delete(tasks).where(eq(tasks.id, id)).returning();
+    if (result.length === 0) {
+      return c.json({ success: false, error: "Task not found" }, 404);
+    }
+    logger.info({ taskId: id }, "Task deleted");
+    return c.json({ success: true, data: result[0] });
   } catch (error) {
-    logger.error(error, "Failed to fetch logs");
-    return c.json({ success: false, error: "Failed to fetch logs" }, 500);
+    logger.error(error, "Failed to delete task");
+    return c.json({ success: false, error: "Failed to delete task" }, 500);
   }
 });
 
-app.post("/api/logs", async (c) => {
-  try {
-    const body = await c.req.json();
-    const result = await db.insert(logs).values(body).returning();
-    return c.json({ success: true, data: result[0] }, 201);
-  } catch (error) {
-    logger.error(error, "Failed to create log");
-    return c.json({ success: false, error: "Failed to create log" }, 500);
-  }
-});
+// =============================================================================
+// LOGS — Batch Log Shipping (Issue #57)
+// =============================================================================
+
+app.route("/api/logs", logRoutes);
+
+// =============================================================================
+// SETTINGS — Cloud Config
+// =============================================================================
+
+app.route("/api/settings/cloud", cloudSettings);
+
+// =============================================================================
+// TELEMETRY
+// =============================================================================
+
+app.route("/api/agents", telemetryRoutes);
+app.route("/api/telemetry", telemetryRoutes);
+
+// =============================================================================
+// DEPLOYS
+// =============================================================================
+
+app.route("/api/deploys", deployRoutes);
 
 export default app;

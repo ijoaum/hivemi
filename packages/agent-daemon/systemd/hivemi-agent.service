@@ -1,0 +1,29 @@
+[Unit]
+Description=HiveMI Agent Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw/.hivemi/daemon
+EnvironmentFile=/home/openclaw/.hivemi/daemon/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hivemi-daemon
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/openclaw
+
+[Install]
+WantedBy=multi-user.target

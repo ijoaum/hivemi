@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const status = {
       agents: {
         total: agents.length,
-        online: agents.filter((a: { status: string }) => a.status === "online").length,
+        online: agents.filter((a: { status: string }) => a.status === "idle" || a.status === "working").length,
         working: agents.filter((a: { status: string }) => a.status === "working").length,
         idle: agents.filter((a: { status: string }) => a.status === "idle").length,
         error: agents.filter((a: { status: string }) => a.status === "error").length,

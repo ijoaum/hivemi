@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useApi } from "@/hooks/use-api";
 import { tasksApi, agentsApi, teamsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { X } from "lucide-react";
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -15,9 +16,10 @@ interface TaskDetailModalProps {
 
 const statusColors: Record<string, string> = {
   queued: "bg-gray-500/20 text-gray-400",
-  running: "bg-amber-500/20 text-amber-400",
+  locked: "bg-amber-500/20 text-amber-400",
   completed: "bg-green-500/20 text-green-400",
   failed: "bg-red-500/20 text-red-400",
+  cancelling: "bg-yellow-500/20 text-yellow-400",
   cancelled: "bg-gray-500/20 text-gray-400",
 };
 
@@ -68,7 +70,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -185,7 +187,7 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
                 Retry
               </button>
             )}
-            {(task.status === "queued" || task.status === "running") && (
+            {(task.status === "queued" || task.status === "locked") && (
               <button
                 onClick={handleCancel}
                 className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30"

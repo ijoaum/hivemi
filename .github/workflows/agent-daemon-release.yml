@@ -1,0 +1,145 @@
+# =============================================================================
+# CI/CD: Agent Daemon Build & Release
+#
+# Triggers on push to main when packages/agent-daemon/ changes.
+# Builds the daemon, runs tests, packages artifacts, and creates a GitHub
+# Release with tag daemon-v{version}.
+# =============================================================================
+
+name: Agent Daemon Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/agent-daemon/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build, Test & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Setup Node.js + pnpm
+      # ------------------------------------------------------------------
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      # ------------------------------------------------------------------
+      # 3. Install dependencies
+      # ------------------------------------------------------------------
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ------------------------------------------------------------------
+      # 4. Build daemon (and its workspace dependency @hivemi/protocol)
+      # ------------------------------------------------------------------
+      - name: Build daemon
+        run: pnpm --filter @hivemi/agent-daemon... build
+
+      # ------------------------------------------------------------------
+      # 5. Run tests
+      # ------------------------------------------------------------------
+      - name: Run tests
+        run: pnpm --filter @hivemi/agent-daemon test
+
+      # ------------------------------------------------------------------
+      # 6. Read version from package.json
+      # ------------------------------------------------------------------
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' packages/agent-daemon/package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=daemon-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $VERSION"
+
+      # ------------------------------------------------------------------
+      # 7. Check if tag already exists (skip release if so)
+      # ------------------------------------------------------------------
+      - name: Check existing tag
+        id: check_tag
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️ Tag ${{ steps.version.outputs.tag }} already exists — skipping release"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ------------------------------------------------------------------
+      # 8. Package tarball: dist/ + package.json + systemd service
+      # ------------------------------------------------------------------
+      - name: Package tarball
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          cd packages/agent-daemon
+          tar -czf hivemi-daemon.tar.gz \
+            --exclude='dist/__tests__' \
+            dist/ \
+            package.json \
+            systemd/hivemi-agent.service
+          echo "📦 Tarball contents:"
+          tar -tzf hivemi-daemon.tar.gz
+          echo "📦 Size: $(du -h hivemi-daemon.tar.gz | cut -f1)"
+
+      # ------------------------------------------------------------------
+      # 9. Verify bootstrap script exists
+      # ------------------------------------------------------------------
+      - name: Verify bootstrap script
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          if [ ! -f packages/agent-daemon/hivemi-agent-bootstrap.sh ]; then
+            echo "❌ hivemi-agent-bootstrap.sh not found!"
+            exit 1
+          fi
+          echo "✅ Bootstrap script found"
+
+      # ------------------------------------------------------------------
+      # 10. Create GitHub Release with both artifacts
+      # ------------------------------------------------------------------
+      - name: Create release
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Agent Daemon ${{ steps.version.outputs.version }}
+          body: |
+            ## Agent Daemon v${{ steps.version.outputs.version }}
+
+            ### Artifacts
+            - **`hivemi-daemon.tar.gz`** — Compiled daemon (dist/ + package.json + systemd service)
+            - **`hivemi-agent-bootstrap.sh`** — VM bootstrap script for cloud-init
+
+            ### Usage
+            Download requires a GitHub token (private repo):
+            ```bash
+            curl -fsSL \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/octet-stream" \
+              -o hivemi-agent-bootstrap.sh \
+              "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/hivemi-agent-bootstrap.sh"
+            ```
+          draft: false
+          prerelease: false
+          files: |
+            packages/agent-daemon/hivemi-daemon.tar.gz
+            packages/agent-daemon/hivemi-agent-bootstrap.sh

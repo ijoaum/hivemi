@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "file-read",
+      "description": "Read files to inspect implementation",
+      "enabled": true
+    },
+    {
+      "name": "shell-exec",
+      "description": "Run test suites and linting",
+      "enabled": true
+    },
+    {
+      "name": "report-issue",
+      "description": "Report a bug or quality issue to the registry",
+      "enabled": true
+    },
+    {
+      "name": "query-tasks",
+      "description": "Query tasks for acceptance criteria and context",
+      "enabled": true
+    }
+  ]
+}

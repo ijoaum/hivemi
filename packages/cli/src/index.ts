@@ -177,7 +177,7 @@ tasks
       for (const task of tasks.slice(0, parseInt(options.limit))) {
         const statusIcon = 
           task.status === "completed" ? "✅" :
-          task.status === "running" ? "🔄" :
+          task.status === "locked" ? "🔄" :
           task.status === "failed" ? "❌" :
           task.status === "queued" ? "⏳" : "⭕";
         

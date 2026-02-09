@@ -3,11 +3,13 @@
 import { useState, useCallback, useMemo } from "react";
 import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
-import { AppLayout } from "@/components/app-layout";
 import { DeployAgentModal } from "@/components/deploy-agent-modal";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
 import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Hexagon } from "lucide-react";
+import { RoleIcon } from "@/components/role-icon";
 
 const teamColors: Record<string, string> = {
   amber: "border-amber-300 dark:border-amber-700 bg-gradient-to-br from-white via-amber-50 to-amber-100 dark:from-amber-900/40 dark:via-amber-950/30 dark:to-amber-900/20 shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.8),inset_0_-1px_2px_0_rgba(0,0,0,0.05),0_4px_12px_0_rgba(0,0,0,0.08)] dark:shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.15),inset_0_-1px_2px_0_rgba(0,0,0,0.2),0_4px_12px_0_rgba(0,0,0,0.3)]",
@@ -67,40 +69,45 @@ function TeamSkeleton() {
 
 export default function Home() {
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: "stop" | "restart" | "delete"; agentId: string; agentName: string } | null>(null);
   
   // Fetch from API with auto-refresh every 5 seconds
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
   const rolesFetcher = useCallback(() => rolesApi.list(), []);
   
-  const { data: apiAgents, loading: agentsLoading } = useApi(agentsFetcher, { refetchInterval: 5000 });
-  const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000 });
-  const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000 });
+  const { data: apiAgents, loading: agentsLoading, refetch: refetchAgents } = useApi(agentsFetcher, { refetchInterval: 5000, cacheKey: "agents" });
+  const { data: apiTeams, loading: teamsLoading } = useApi(teamsFetcher, { refetchInterval: 30000, cacheKey: "teams" });
+  const { data: apiRoles } = useApi(rolesFetcher, { refetchInterval: 30000, cacheKey: "roles" });
 
   const isLoading = agentsLoading || teamsLoading;
 
   // Convert API agents to display format
   const agents = useMemo(() => {
     if (!apiAgents?.length) return [];
-    return apiAgents.map(a => ({
-      id: a.id,
-      name: a.name,
-      role: apiRoles?.find(r => r.id === a.roleId)?.name || "Agent",
-      team: a.teamId,
-      teamId: a.teamId,
-      status: a.status,
-      currentTask: a.currentTaskId ? "Processing task..." : undefined,
-      progress: a.status === "working" ? Math.floor(Math.random() * 60) + 20 : undefined,
-      uptime: Math.floor(Math.random() * 28800) + 3600,
-      tasksToday: Math.floor(Math.random() * 50) + 10,
-      model: a.model,
-    }));
-  }, [apiAgents, apiRoles]);
+    return apiAgents.map(a => {
+      return {
+        id: a.id,
+        name: a.name,
+        role: a.role?.name || "Agent",
+        roleIcon: a.role?.icon || "bot",
+        roleColor: a.role?.color || "amber",
+        team: a.teamId,
+        teamId: a.teamId,
+        status: a.status,
+        currentTask: a.currentTaskId ? "Processing task..." : undefined,
+        progress: a.status === "working" ? Math.floor(Math.random() * 60) + 20 : undefined,
+        uptime: Math.floor(Math.random() * 28800) + 3600,
+        tasksToday: Math.floor(Math.random() * 50) + 10,
+        model: a.model,
+      };
+    });
+  }, [apiAgents]);
 
   // Calculate stats from agents
   const stats = useMemo(() => ({
     total: agents.length,
-    online: agents.filter(a => a.status !== "offline").length,
+    online: agents.filter(a => a.status === "idle" || a.status === "working").length,
     working: agents.filter(a => a.status === "working").length,
     idle: agents.filter(a => a.status === "idle").length,
     error: agents.filter(a => a.status === "error").length,
@@ -116,30 +123,53 @@ export default function Home() {
   };
 
   const handleDeploy = async (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {
-    console.log("Deploying agent:", data);
-    try {
-      await agentsApi.create({
-        name: data.name,
-        roleId: data.roleId,
-        teamId: data.teamId,
-        model: data.model,
-        host: "http://localhost",
-        port: 3001 + Math.floor(Math.random() * 100),
-        status: data.autoStart ? "idle" : "offline",
-      });
-      setIsDeployModalOpen(false);
-    } catch (err) {
-      console.error("Failed to deploy agent:", err);
-    }
+    await agentsApi.create({
+      name: data.name,
+      roleId: data.roleId,
+      teamId: data.teamId,
+      model: data.model,
+      host: "http://localhost",
+      port: 3001 + Math.floor(Math.random() * 100),
+      status: data.autoStart ? "idle" : "offline",
+    });
+    await refetchAgents();
+  };
+
+  const handleAgentStart = async (agentId: string) => {
+    await agentsApi.update(agentId, { status: "idle" });
+    await refetchAgents();
+  };
+
+  const handleAgentStop = async () => {
+    if (!confirmAction || confirmAction.type !== "stop") return;
+    await agentsApi.update(confirmAction.agentId, { status: "offline" });
+    setConfirmAction(null);
+    await refetchAgents();
+  };
+
+  const handleAgentRestart = async () => {
+    if (!confirmAction || confirmAction.type !== "restart") return;
+    await agentsApi.update(confirmAction.agentId, { status: "offline" });
+    await new Promise(r => setTimeout(r, 500));
+    await agentsApi.update(confirmAction.agentId, { status: "idle" });
+    setConfirmAction(null);
+    await refetchAgents();
+  };
+
+  const handleAgentDelete = async () => {
+    if (!confirmAction || confirmAction.type !== "delete") return;
+    await agentsApi.delete(confirmAction.agentId);
+    setConfirmAction(null);
+    await refetchAgents();
   };
 
   return (
-    <AppLayout>
+    <>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-            The Hive 🐝
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            The Hive <Hexagon className="w-6 h-6 text-amber-500 inline" />
           </h1>
           <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1">
             Your agent squad, working in real-time
@@ -180,7 +210,7 @@ export default function Home() {
             className="px-3 md:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white 
                        font-medium rounded-lg transition-colors flex items-center gap-2"
           >
-            <span className="text-lg">+</span>
+            <Hexagon className="w-5 h-5" />
             <span className="hidden sm:inline">Deploy Agent</span>
           </button>
         </div>
@@ -206,7 +236,9 @@ export default function Home() {
               <div key={team.id}>
                 {/* Team Header */}
                 <div className="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
-                  <span className="text-xl md:text-2xl">{team.emoji}</span>
+                  <div className={cn("p-1.5 rounded-lg", teamHeaderColors[team.color] || "text-gray-700")}>
+                    <RoleIcon icon={team.emoji} className="w-5 h-5 md:w-6 md:h-6" />
+                  </div>
                   <h2 className={cn("text-lg md:text-xl font-bold", teamHeaderColors[team.color] || "text-gray-700")}>
                     {team.name}
                   </h2>
@@ -228,6 +260,10 @@ export default function Home() {
                           agent={agent as any}
                           onViewLogs={() => console.log("View logs:", agent.name)}
                           onConfigure={() => console.log("Configure:", agent.name)}
+                          onStart={() => handleAgentStart(agent.id)}
+                          onStop={() => setConfirmAction({ type: "stop", agentId: agent.id, agentName: agent.name })}
+                          onRestart={() => setConfirmAction({ type: "restart", agentId: agent.id, agentName: agent.name })}
+                          onDelete={() => setConfirmAction({ type: "delete", agentId: agent.id, agentName: agent.name })}
                         />
                       ))}
                     </div>
@@ -276,7 +312,40 @@ export default function Home() {
         isOpen={isDeployModalOpen}
         onClose={() => setIsDeployModalOpen(false)}
         onDeploy={handleDeploy}
+        roles={apiRoles || []}
+        teams={apiTeams || []}
       />
-    </AppLayout>
+
+      {/* Stop Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "stop"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentStop}
+        title="Stop Agent"
+        message={`Are you sure you want to stop "${confirmAction?.agentName}"? The agent will go offline and stop processing tasks.`}
+        confirmLabel="Stop"
+      />
+
+      {/* Restart Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "restart"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentRestart}
+        title="Restart Agent"
+        message={`Are you sure you want to restart "${confirmAction?.agentName}"? The agent will briefly go offline and then come back.`}
+        confirmLabel="Restart"
+      />
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction?.type === "delete"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleAgentDelete}
+        title="Delete Agent"
+        message={`Are you sure you want to delete "${confirmAction?.agentName}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDestructive
+      />
+    </>
   );
 }
