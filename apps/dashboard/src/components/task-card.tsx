@@ -10,9 +10,11 @@ interface TaskCardProps {
 
 const statusConfig: Record<TaskStatus, { color: string; bg: string; label: string }> = {
   queued: { color: "text-gray-400", bg: "bg-gray-500/20", label: "Queued" },
-  running: { color: "text-blue-400", bg: "bg-blue-500/20", label: "Running" },
+  locked: { color: "text-blue-400", bg: "bg-blue-500/20", label: "Running" },
   completed: { color: "text-green-400", bg: "bg-green-500/20", label: "Completed" },
   failed: { color: "text-red-400", bg: "bg-red-500/20", label: "Failed" },
+  cancelling: { color: "text-yellow-400", bg: "bg-yellow-500/20", label: "Cancelling" },
+  cancelled: { color: "text-gray-500", bg: "bg-gray-600/20", label: "Cancelled" },
 };
 
 const priorityConfig: Record<TaskPriority, { color: string; icon: string }> = {
