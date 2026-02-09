@@ -1,5 +1,109 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #57: Protocol — Batch Log Shipping
+
+### Summary
+Implemented the batch log shipping protocol: daemons accumulate warn/error/lifecycle logs locally and ship them to the Registry in a single `POST /api/logs` request every 5 minutes. Debug and info logs stay local in journalctl. The Registry endpoint validates with Zod, batch-inserts all entries, and the GET endpoint now supports filtering by agentId, level, and time range. Dashboard updated with lifecycle log level support and per-agent filtering.
+
+### Done
+- **Protocol schemas** (`packages/protocol/src/types.ts`):
+  - `ShippableLogLevelSchema` — enum: `warn | error | lifecycle` (debug/info excluded from shipping)
+  - `LogBatchEntrySchema` — validates individual log entry (level, message, timestamp, optional metadata with taskId/component)
+  - `SubmitLogBatchSchema` — validates batch payload: `{ agentId: UUID, entries: LogBatchEntry[] }` (min 1, max 500 entries)
+  - Message max length: 10,000 chars; component max: 50 chars; metadata passthrough for extensibility
+
+- **Registry batch endpoint** (`apps/registry/src/routes/logs.ts`):
+  - `POST /api/logs` — accepts `{ agentId, entries[] }` batch format
+  - Zod validation rejects debug/info levels at the protocol boundary
+  - Verifies agent exists (404 if not), uses agent name as log source
+  - Batch insert (single SQL statement) for all entries
+  - Returns `{ received: N }` count
+  - `GET /api/logs` — enhanced with filters: `?agentId=`, `?level=warn,error`, `?from=&to=`, `?limit=` (max 1000)
+  - Comma-separated level filter support (`?level=warn,error`)
+  - Replaced inline log handlers in `routes.ts` with modular route file
+
+- **Daemon log shipping** (`packages/agent-daemon/src/registry-client.ts`):
+  - `sendLogs()` now sends single POST with `{ agentId, entries[] }` batch format
+  - Filters out debug/info entries before shipping — only warn/error/lifecycle are sent
+  - Builds metadata object from taskId + component + extra metadata
+  - Throws on failure (caller handles retry via log buffer)
+
+- **Dashboard updates**:
+  - `LogLevel` type now includes `lifecycle`
+  - `logsApi.list()` supports `agentId`, `level`, `from`, `to` query params
+  - Logs page: new lifecycle stat card (green) + lifecycle level config
+  - Agent filter dropdown showing agent IDs (truncated to 8 chars)
+  - Dashboard proxy routes forward POST to registry
+  - Grid layout updated to 5 columns for the new stat card
+
+- **49 new tests** — all passing:
+  - 29 protocol tests (`packages/protocol/src/__tests__/log-batch.test.ts`):
+    - ShippableLogLevelSchema: accepts warn/error/lifecycle, rejects debug/info/unknown
+    - LogBatchEntrySchema: full entry, minimal, lifecycle, empty message, missing timestamp, invalid timestamp, debug rejected, info rejected, passthrough metadata, invalid taskId UUID, component > 50 chars, message limits (10000 ok, 10001 rejected)
+    - SubmitLogBatchSchema: valid batch, multiple entries, empty entries, missing agentId, invalid agentId, > 500 entries, exactly 500, exact Issue #57 payload, info/debug rejection
+  - 20 registry tests (`apps/registry/src/__tests__/log-batch.test.ts`):
+    - POST: valid batch (201), correct row data, unknown agent (404), missing agentId (400), empty entries (400), debug (400), info (400), invalid timestamp (400), empty message (400), DB failure (500), metadata without taskId/component, entries without metadata, validation details on 400
+    - GET: default limit, custom limit, cap at 1000, agentId filter, level filter, comma-separated levels, from/to range
+
+### Key Decisions
+- **Batch over one-by-one** — the old `sendLogs()` sent one HTTP request per log entry. The new approach sends all entries in a single POST, reducing network overhead from N requests to 1.
+- **Level filtering at daemon AND registry** — the daemon filters before sending (saves bandwidth), the registry validates with Zod (defense in depth). Even if a daemon has a bug, debug/info entries can't reach the DB.
+- **Max 500 entries per batch** — prevents abuse/memory issues. At 5-minute intervals with only warn/error/lifecycle, 500 is more than enough for normal operation.
+- **Modular route file** — replaced inline `app.get`/`app.post` in `routes.ts` with `routes/logs.ts` for consistency with other route modules (telemetry, heartbeat, tasks, etc.).
+- **Passthrough metadata** — `LogBatchEntrySchema.metadata` uses `.passthrough()` so daemons can include extra context fields beyond taskId/component without breaking validation.
+- **GET filters are AND-combined** — multiple query params narrow results. Comma-separated levels use `inArray` (OR within level filter, AND with other filters).
+
+### Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/logs` | Batch log submission from daemon |
+| GET | `/api/logs` | Query logs with filters (agentId, level, from, to, limit) |
+
+### Payload (Issue #57 spec)
+```json
+{
+  "agentId": "uuid",
+  "entries": [
+    {
+      "level": "warn | error | lifecycle",
+      "message": "Task xyz failed: timeout",
+      "timestamp": "ISO 8601",
+      "metadata": {
+        "taskId": "uuid",
+        "component": "task-executor"
+      }
+    }
+  ]
+}
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | +ShippableLogLevelSchema, +LogBatchEntrySchema, +SubmitLogBatchSchema |
+| `packages/protocol/src/__tests__/log-batch.test.ts` | NEW — 29 tests |
+| `apps/registry/src/routes/logs.ts` | NEW — batch POST + filtered GET |
+| `apps/registry/src/routes.ts` | Replace inline log handlers with route module |
+| `apps/registry/src/__tests__/log-batch.test.ts` | NEW — 20 tests |
+| `packages/agent-daemon/src/registry-client.ts` | sendLogs() → batch format + level filter |
+| `apps/dashboard/src/types/log.ts` | +lifecycle level, +component field |
+| `apps/dashboard/src/lib/api.ts` | logsApi.list() with filter params |
+| `apps/dashboard/src/app/api/logs/route.ts` | +POST proxy to registry |
+| `apps/dashboard/src/app/logs/page.tsx` | +lifecycle stat, +agent filter |
+
+### Commits
+- `3a98903` — feat(protocol): add SubmitLogBatchSchema for batch log shipping (#57)
+- `e6946f4` — feat(registry): batch log endpoint with filters and validation (#57)
+- `573fcbe` — feat(agent-daemon): batch log shipping with level filtering (#57)
+- `afea352` — feat(dashboard): lifecycle log level and agent filtering (#57)
+
+### Next
+- #58 (Protocol: Error Reporting) — structured error reports with context
+- #50 (Dashboard) — more UI enhancements for agent metrics and status
+- #68 (Task Progress) — real-time progress tracking during task execution
+
+---
+
 ## 2026-02-11 — Issue #56: Protocol — P2P Agent-to-Agent Communication
 
 ### Summary
