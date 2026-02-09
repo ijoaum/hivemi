@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { logger } from "../lib/logger.js";
 import type { DeployOrchestrator, DeployEvent } from "../lib/deploy-orchestrator.js";
+import { UndeployBlockedError } from "../lib/deploy-orchestrator.js";
 import { registryClient } from "../lib/registry-client.js";
 
 export function createDeployRoutes(orchestrator: DeployOrchestrator): Hono {
@@ -106,19 +107,37 @@ export function createDeployRoutes(orchestrator: DeployOrchestrator): Hono {
 
   // ===========================================================================
   // DELETE /api/deploy/:id — Undeploy (destroy VM and cleanup)
+  //
+  // Query params:
+  //   force (optional) — "true" to force destroy even if agent is working
+  //
+  // Returns:
+  //   200 — destroyed successfully
+  //   409 — agent is working, use force=true to override
+  //   404 — deploy not found
   // ===========================================================================
 
   app.delete("/:id", async (c) => {
     try {
       const id = c.req.param("id");
+      const force = c.req.query("force") === "true";
 
-      await orchestrator.undeploy(id);
+      await orchestrator.undeploy(id, { force });
 
       return c.json({
         success: true,
         data: { message: "Deploy destroyed successfully" },
       });
     } catch (err) {
+      if (err instanceof UndeployBlockedError) {
+        return c.json({
+          success: false,
+          error: err.message,
+          agentId: err.agentId,
+          deployId: err.deployId,
+          blocked: true,
+        }, 409);
+      }
       const error = err as Error;
       logger.error({ error: error.message }, "Failed to undeploy");
       return c.json({ success: false, error: error.message }, 500);

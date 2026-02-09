@@ -126,6 +126,9 @@ export interface IRegistryClient {
     sshPublicKey: string | null;
     sshPrivateKey: string | null;
   } | null>;
+
+  /** Requeue all tasks locked by a specific agent (set status back to "queued") */
+  requeueLockedTasks(agentId: string): Promise<{ requeued: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -528,9 +531,17 @@ export class DeployOrchestrator extends EventEmitter {
 
   // -------------------------------------------------------------------------
   // Undeploy — Destroy VM and clean up
+  //
+  // Full destruction flow:
+  // 1. Check if agent is working — handle graceful shutdown option
+  // 2. Destroy VM via provisioner
+  // 3. Remove VM from firewall
+  // 4. Requeue tasks locked by this agent
+  // 5. Update deploy status to destroyed (keep in DB for history)
+  // 6. Update agent status to destroyed (keep in DB for history)
   // -------------------------------------------------------------------------
 
-  async undeploy(deployId: string): Promise<void> {
+  async undeploy(deployId: string, options?: { force?: boolean }): Promise<void> {
     const deployResult = await this.registry.getDeploy(deployId);
     if (!deployResult.success || !deployResult.data) {
       throw new Error("Deploy not found");
@@ -538,23 +549,64 @@ export class DeployOrchestrator extends EventEmitter {
 
     const deploy = deployResult.data;
 
+    // Check if already destroyed
+    if (deploy.status === "destroyed") {
+      logger.info({ deployId }, "Deploy already destroyed");
+      return;
+    }
+
+    // Check agent status for graceful shutdown
+    if (deploy.agentId && !options?.force) {
+      const agentStatus = await this.getAgentStatus(deploy.agentId);
+      if (agentStatus === "working") {
+        throw new UndeployBlockedError(
+          "Agent is currently working on a task. Use force=true to destroy immediately, or wait for the task to complete.",
+          deploy.agentId,
+          deployId,
+        );
+      }
+    }
+
     // Destroy VM if it exists
     if (deploy.instanceId) {
       try {
         await this.provisioner.destroyInstance(deploy.instanceId);
         logger.info({ deployId, instanceId: deploy.instanceId }, "VM destroyed");
       } catch (err) {
+        // VM might already be gone (404) — log and continue
         logger.warn({ deployId, error: (err as Error).message }, "Failed to destroy VM (may already be gone)");
+      }
+
+      // Remove from firewall
+      try {
+        const cloudConfig = await this.registry.getCloudConfig();
+        if (cloudConfig) {
+          const firewallId = await this.provisioner.ensureFirewall("hivemi-agents", []);
+          await this.provisioner.removeInstanceFromFirewall(firewallId, deploy.instanceId);
+          logger.info({ deployId, instanceId: deploy.instanceId }, "VM removed from firewall");
+        }
+      } catch (err) {
+        logger.warn({ deployId, error: (err as Error).message }, "Failed to remove VM from firewall (non-critical)");
       }
     }
 
-    // Update deploy status
+    // Requeue tasks locked by this agent
+    if (deploy.agentId) {
+      try {
+        await this.registry.requeueLockedTasks(deploy.agentId);
+        logger.info({ deployId, agentId: deploy.agentId }, "Locked tasks requeued");
+      } catch (err) {
+        logger.warn({ deployId, error: (err as Error).message }, "Failed to requeue locked tasks");
+      }
+    }
+
+    // Update deploy status (keep in DB for history — never delete rows)
     await this.registry.updateDeploy(deployId, {
       status: "destroyed",
       completedAt: new Date(),
     });
 
-    // Update agent status
+    // Update agent status (keep in DB for history)
     if (deploy.agentId) {
       await this.registry.updateAgent(deploy.agentId, {
         status: "destroyed",
@@ -572,16 +624,31 @@ export class DeployOrchestrator extends EventEmitter {
     logger.info({ deployId }, "Undeploy completed");
   }
 
+  /**
+   * Get agent status from registry.
+   * Returns status string or null if agent not found.
+   */
+  private async getAgentStatus(agentId: string): Promise<string | null> {
+    try {
+      const result = await this.registry.updateAgent(agentId, {});
+      return result.data?.status || null;
+    } catch {
+      return null;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Redeploy — Destroy and recreate
+  // Uses the same config (role, team, model) but generates new name and VM.
+  // Immutable deploy: always destroy + deploy fresh.
   // -------------------------------------------------------------------------
 
   async redeploy(
     deployId: string,
     request: DeployRequest,
   ): Promise<{ deployId: string; agentId: string }> {
-    // First undeploy
-    await this.undeploy(deployId);
+    // Force destroy (don't block on working tasks)
+    await this.undeploy(deployId, { force: true });
 
     // Then start a new deploy
     return this.startDeploy(request);
@@ -826,5 +893,25 @@ export class DeployOrchestrator extends EventEmitter {
 
     this.emit("deploy_event", event);
     this.emit(`deploy:${deployId}`, event);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when undeploy is blocked because the agent is currently working.
+ * Callers can catch this to prompt the user to force destroy or wait.
+ */
+export class UndeployBlockedError extends Error {
+  readonly agentId: string;
+  readonly deployId: string;
+
+  constructor(message: string, agentId: string, deployId: string) {
+    super(message);
+    this.name = "UndeployBlockedError";
+    this.agentId = agentId;
+    this.deployId = deployId;
   }
 }

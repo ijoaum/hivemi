@@ -67,6 +67,10 @@ export interface DaemonConfig {
 
   /** Per-role timeout overrides in ms. Key = role name, value = timeout in ms. */
   roleTimeouts?: Record<string, number>;
+
+  /** Max time to wait for active task during graceful shutdown (default: 55_000 = 55s).
+   * Set slightly below systemd's TimeoutStopSec (60s) to leave room for cleanup. */
+  shutdownTimeoutMs?: number;
 }
 
 /** Default timeouts per role in ms */
@@ -149,6 +153,7 @@ export function loadConfigFromEnv(env: Record<string, string | undefined>): Daem
     taskTimeoutMs: optionalInt("TASK_TIMEOUT_MS", 600_000),
     roleName: env["ROLE_NAME"],
     roleTimeouts: parseRoleTimeouts(env["ROLE_TIMEOUTS"]),
+    shutdownTimeoutMs: optionalInt("SHUTDOWN_TIMEOUT_MS", 55_000),
   };
 }
 

@@ -274,3 +274,48 @@ export const infraApi = {
     method: "DELETE",
   }),
 };
+
+// Deploy
+export interface Deploy {
+  id: string;
+  agentId: string | null;
+  agentName: string;
+  cloudProvider: string;
+  region: string;
+  instanceSize: string;
+  instanceId: string | null;
+  status: "provisioning" | "installing" | "configuring" | "registering" | "ready" | "failed" | "destroyed";
+  phases: Array<{
+    name: string;
+    status: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    error: string | null;
+  }>;
+  error: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface DestroyResponse {
+  message: string;
+  blocked?: boolean;
+  agentId?: string;
+  deployId?: string;
+}
+
+export const deployApi = {
+  get: (id: string) => fetchApi<Deploy>(`/api/deploy/${id}`),
+  list: () => fetchApi<Deploy[]>("/api/deploys"),
+  destroy: (id: string, force?: boolean) => {
+    const query = force ? "?force=true" : "";
+    return fetchApi<DestroyResponse>(`/api/deploy/${id}${query}`, {
+      method: "DELETE",
+    });
+  },
+  redeploy: (id: string, data: { name: string; roleId: string; teamId: string; model: string }) =>
+    fetchApi<{ deployId: string; agentId: string }>(`/api/deploy/${id}/redeploy`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};

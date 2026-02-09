@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleIcon } from "@/components/role-icon";
 import { useApi } from "@/hooks/use-api";
-import { agentsApi, tasksApi, logsApi } from "@/lib/api";
+import { agentsApi, tasksApi, logsApi, deployApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   MoreVertical,
@@ -43,7 +43,7 @@ export default function AgentDetailPage() {
   const agentId = params.id as string;
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<"delete" | "restart" | "stop" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"delete" | "restart" | "stop" | "destroy" | "force-destroy" | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -72,6 +72,7 @@ export default function AgentDetailPage() {
   const agentLogs = useMemo(() => allLogs?.filter(l => l.agentId === agentId) || [], [allLogs, agentId]);
 
   const isOnline = agent && (agent.status === "idle" || agent.status === "working");
+  const isDestroyed = agent?.status === "destroyed";
 
   const handleStart = async () => {
     setActionLoading(true);
@@ -111,7 +112,38 @@ export default function AgentDetailPage() {
   const handleDelete = async () => {
     setActionLoading(true);
     try {
-      await agentsApi.delete(agentId);
+      // If agent has a deployId, use the deploy destroy flow
+      if (agent?.deployId) {
+        try {
+          await deployApi.destroy(agent.deployId);
+        } catch (err: any) {
+          // If blocked because agent is working, show force-destroy dialog
+          if (err.message?.includes("currently working")) {
+            setConfirmAction("force-destroy");
+            setActionLoading(false);
+            return;
+          }
+          throw err;
+        }
+      } else {
+        // No deploy — just delete the agent record
+        await agentsApi.delete(agentId);
+      }
+      router.push("/");
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleForceDestroy = async () => {
+    setActionLoading(true);
+    try {
+      if (agent?.deployId) {
+        await deployApi.destroy(agent.deployId, true);
+      } else {
+        await agentsApi.delete(agentId);
+      }
       router.push("/");
     } finally {
       setActionLoading(false);
@@ -130,14 +162,13 @@ export default function AgentDetailPage() {
   if (agentError || !agent) {
     return (
       <div className="text-center py-12">
-          <p className="text-red-400 mb-4">Agent not found</p>
-          <button
-            onClick={() => router.push("/")}
-            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+        <p className="text-red-400 mb-4">Agent not found</p>
+        <button
+          onClick={() => router.push("/")}
+          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700"
+        >
+          Back to Dashboard
+        </button>
       </div>
     );
   }
@@ -173,6 +204,7 @@ export default function AgentDetailPage() {
         </div>
 
         {/* Actions */}
+        {!isDestroyed && (
         <div className="flex items-center gap-2">
           {/* Primary action: Start or Stop */}
           {isOnline ? (
@@ -216,16 +248,17 @@ export default function AgentDetailPage() {
                 </button>
                 <div className="border-t border-gray-700" />
                 <button
-                  onClick={() => { setMenuOpen(false); setConfirmAction("delete"); }}
+                  onClick={() => { setMenuOpen(false); setConfirmAction("destroy"); }}
                   className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
-                  Delete Agent
+                  Destroy
                 </button>
               </div>
             )}
           </div>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -401,6 +434,28 @@ export default function AgentDetailPage() {
         title="Delete Agent"
         message={`Are you sure you want to delete "${agent.name}"? This action cannot be undone. All associated data will be lost.`}
         confirmLabel="Delete"
+        isDestructive
+      />
+
+      {/* Destroy Confirmation */}
+      <ConfirmDialog
+        isOpen={confirmAction === "destroy"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleDelete}
+        title="Destroy Agent"
+        message={`Destroy agent ${agent.name}? This will delete the VM and all local data. This action cannot be undone.`}
+        confirmLabel="Destroy"
+        isDestructive
+      />
+
+      {/* Force Destroy Confirmation (agent is working) */}
+      <ConfirmDialog
+        isOpen={confirmAction === "force-destroy"}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleForceDestroy}
+        title="Force Destroy Agent"
+        message={`Agent ${agent.name} is currently working on a task. Force destroying will abort the task and return it to the queue. Continue?`}
+        confirmLabel="Force Destroy"
         isDestructive
       />
     </>

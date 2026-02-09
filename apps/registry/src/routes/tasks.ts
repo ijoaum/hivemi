@@ -335,4 +335,62 @@ app.post("/:id/subtasks", async (c) => {
   }
 });
 
+// =============================================================================
+// POST /requeue — Requeue all tasks locked by a specific agent
+//
+// Used during undeploy to return tasks to the queue when an agent is destroyed.
+// Sets locked tasks back to "queued" and clears lock fields.
+//
+// Body:
+//   agentId (required) — the agent whose tasks should be requeued
+// =============================================================================
+
+app.post("/requeue", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { agentId } = body;
+
+    if (!agentId) {
+      return c.json({ success: false, error: "Missing required field: agentId" }, 400);
+    }
+
+    // Find all tasks locked by this agent
+    const lockedTasks = await db
+      .select({ id: tasks.id, title: tasks.title })
+      .from(tasks)
+      .where(eq(tasks.lockedBy, agentId));
+
+    if (lockedTasks.length === 0) {
+      return c.json({ success: true, data: { requeued: 0 } });
+    }
+
+    // Requeue them: set status back to queued, clear lock fields
+    const now = new Date();
+    let requeued = 0;
+    for (const task of lockedTasks) {
+      await db
+        .update(tasks)
+        .set({
+          status: "queued",
+          lockedBy: null,
+          lockedAt: null,
+          startedAt: null,
+          agentId: null,
+          error: null,
+        })
+        .where(eq(tasks.id, task.id));
+
+      requeued++;
+      logger.info({ taskId: task.id, agentId, title: task.title }, "Task requeued after agent destroy");
+    }
+
+    logger.info({ agentId, requeued }, "Tasks requeued for destroyed agent");
+
+    return c.json({ success: true, data: { requeued } });
+  } catch (error) {
+    logger.error(error, "Failed to requeue tasks");
+    return c.json({ success: false, error: "Failed to requeue tasks" }, 500);
+  }
+});
+
 export default app;

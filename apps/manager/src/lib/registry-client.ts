@@ -226,6 +226,19 @@ export class RegistryClient {
     return this.updateTask(taskId, body);
   }
 
+  /**
+   * Requeue all tasks locked by a specific agent.
+   * Called during undeploy to return tasks to the queue.
+   */
+  async requeueLockedTasks(agentId: string): Promise<{ requeued: number }> {
+    const result = await this.request<{ requeued: number }>(
+      "POST",
+      `/api/tasks/requeue`,
+      { agentId },
+    );
+    return result.data || { requeued: 0 };
+  }
+
   // =========================================================================
   // DEPLOYS
   // =========================================================================

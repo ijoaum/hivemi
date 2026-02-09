@@ -49,6 +49,7 @@ export class AgentDaemon {
   constructor(config: DaemonConfig, logger: DaemonLogger = consoleLogger) {
     this.config = config;
     this.logger = logger;
+    this.shutdownTimeoutMs = config.shutdownTimeoutMs ?? 55_000;
 
     this.registry = new RegistryClient(config, logger);
     this.openclaw = new OpenClawClient(config, logger);
@@ -120,15 +121,31 @@ export class AgentDaemon {
 
   // -------------------------------------------------------------------------
   // Stop (graceful shutdown)
+  //
+  // On SIGTERM:
+  // - If idle: report offline and exit immediately
+  // - If executing a task: wait for it to finish (up to shutdownTimeoutMs)
+  // - If timeout: mark task as failed with "agent shutdown" error
+  // - Ship remaining logs, report offline, exit
   // -------------------------------------------------------------------------
+
+  /** Whether a shutdown has been initiated */
+  get shuttingDown(): boolean {
+    return this._shuttingDown;
+  }
+  private _shuttingDown = false;
+
+  /** Max time to wait for active task during shutdown (default: 55s — leaves 5s for cleanup before systemd SIGKILL at 60s) */
+  readonly shutdownTimeoutMs: number;
 
   async stop(): Promise<void> {
     if (!this.running) return;
+    this._shuttingDown = true;
     this.running = false;
 
     this.logger.info("Graceful shutdown initiated...");
 
-    // 1. Stop all loops
+    // 1. Stop polling for new tasks immediately (no new work)
     this.taskPoller.stop();
     this.telemetry.stop();
 
@@ -145,11 +162,48 @@ export class AgentDaemon {
       this.healthCheckTimer = null;
     }
 
-    // 2. Ship remaining logs
+    // 2. Wait for active task to finish (if any)
+    const activeTask = this.taskPoller.activeTask;
+    if (activeTask) {
+      this.logger.info(`Waiting for active task to complete: ${activeTask.title} (timeout: ${this.shutdownTimeoutMs}ms)`, {
+        taskId: activeTask.id,
+      });
+      this.addLog("lifecycle", `Shutdown waiting for task: ${activeTask.title}`, activeTask.id);
+
+      const finished = await this.waitForTaskCompletion(this.shutdownTimeoutMs);
+
+      if (!finished) {
+        this.logger.warn(`Shutdown timeout — task did not complete in ${this.shutdownTimeoutMs}ms`, {
+          taskId: activeTask.id,
+        });
+        this.addLog("error", `Shutdown timeout — task aborted: ${activeTask.title}`, activeTask.id);
+
+        // Mark the task as failed in the registry
+        try {
+          await this.registry.reportTaskResult(activeTask.id, {
+            status: "failed",
+            output: null,
+            error: "Agent shutdown — task aborted due to SIGTERM timeout",
+            elapsedMs: 0,
+            artifacts: [],
+          });
+        } catch (err) {
+          this.logger.error("Failed to mark timed-out task as failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else {
+        this.logger.info("Active task completed before shutdown timeout");
+      }
+    } else {
+      this.logger.info("No active task — shutting down immediately");
+    }
+
+    // 3. Ship remaining logs
     this.addLog("lifecycle", "Daemon shutting down");
     await this.shipLogs();
 
-    // 3. Set agent offline in registry
+    // 4. Set agent offline in registry
     try {
       await this.registry.setOffline();
     } catch (err) {
@@ -159,6 +213,28 @@ export class AgentDaemon {
     }
 
     this.logger.info("Daemon stopped");
+  }
+
+  /**
+   * Wait for the task poller's active task to complete.
+   * Returns true if the task finished, false if the timeout expired.
+   */
+  private waitForTaskCompletion(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = setInterval(() => {
+        if (!this.taskPoller.activeTask) {
+          clearInterval(checkInterval);
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startTime >= timeoutMs) {
+          clearInterval(checkInterval);
+          resolve(false);
+          return;
+        }
+      }, 500); // Check every 500ms
+    });
   }
 
   // -------------------------------------------------------------------------

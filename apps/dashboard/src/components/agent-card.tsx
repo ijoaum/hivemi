@@ -25,6 +25,13 @@ const statusConfig: Record<AgentStatus, {
   dotColor: string;
   label: string;
 }> = {
+  provisioning: {
+    color: "text-blue-700 dark:text-blue-400",
+    bgColor: "bg-blue-50 dark:bg-blue-950",
+    borderColor: "border-blue-400 dark:border-blue-500",
+    dotColor: "bg-blue-500",
+    label: "Provisioning",
+  },
   working: {
     color: "text-emerald-700 dark:text-emerald-400",
     bgColor: "bg-emerald-50 dark:bg-emerald-950",
@@ -53,6 +60,20 @@ const statusConfig: Record<AgentStatus, {
     dotColor: "bg-gray-400",
     label: "Offline",
   },
+  unreachable: {
+    color: "text-yellow-700 dark:text-yellow-400",
+    bgColor: "bg-yellow-50 dark:bg-yellow-950",
+    borderColor: "border-yellow-400 dark:border-yellow-500",
+    dotColor: "bg-yellow-500",
+    label: "Unreachable",
+  },
+  destroyed: {
+    color: "text-gray-400 dark:text-gray-600",
+    bgColor: "bg-gray-100 dark:bg-gray-900",
+    borderColor: "border-gray-200 dark:border-gray-800",
+    dotColor: "bg-gray-300 dark:bg-gray-700",
+    label: "Destroyed",
+  },
 };
 
 const roleColorClasses: Record<string, string> = {
@@ -71,7 +92,8 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isOnline = agent.status !== "offline";
+  const isOnline = agent.status !== "offline" && agent.status !== "destroyed";
+  const isDestroyed = agent.status === "destroyed";
 
   // Close menu on outside click
   useEffect(() => {
@@ -93,7 +115,8 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
         "bg-white dark:bg-gray-900",
         status.borderColor,
         agent.status === "working" && "animate-pulse-subtle",
-        agent.status === "offline" && "opacity-75"
+        agent.status === "provisioning" && "animate-pulse-subtle",
+        (agent.status === "offline" || agent.status === "destroyed") && "opacity-75"
       )}
     >
       {/* Header Row */}
@@ -161,7 +184,7 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
               <Settings className={cn("w-4 h-4 transition-transform", menuOpen && "rotate-90")} />
             </button>
 
-            {menuOpen && (
+            {menuOpen && !isDestroyed && (
               <div className="absolute right-0 top-full mt-2 w-44 bg-[#1a1a2e] border border-gray-600 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.7)] overflow-hidden z-50">
                 {/* Start / Stop */}
                 {isOnline ? (
@@ -194,13 +217,13 @@ export function AgentCard({ agent, onViewLogs, onConfigure, onStart, onStop, onR
 
                 <div className="border-t border-gray-700" />
 
-                {/* Delete */}
+                {/* Destroy */}
                 <button
                   onClick={() => { setMenuOpen(false); onDelete?.(); }}
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
-                  Delete
+                  Destroy
                 </button>
               </div>
             )}

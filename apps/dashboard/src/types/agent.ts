@@ -1,4 +1,4 @@
-export type AgentStatus = "working" | "idle" | "error" | "offline";
+export type AgentStatus = "provisioning" | "working" | "idle" | "error" | "offline" | "unreachable" | "destroyed";
 
 export type TeamId = "hivemi" | "tests" | "pipeline";
 
@@ -20,6 +20,7 @@ export interface Agent {
   tasksToday: number;
   cpuUsage: number; // 0-100
   memoryUsage: number; // 0-100
+  deployId?: string;
 }
 
 export interface Role {
