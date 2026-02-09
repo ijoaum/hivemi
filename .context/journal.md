@@ -1,5 +1,106 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #58: Bootstrap Fase 1 — Cloud-init Template
+
+### Summary
+Upgraded the cloud-init template to support the new bootstrap script workflow. Instead of running OpenClaw install inline, the cloud-init now downloads and executes `hivemi-agent-bootstrap.sh` from a GitHub Release. The script handles all the heavy lifting (user setup, swap, OpenClaw, daemon). Template variables (`hostname`, `releaseUrl`, `ghToken`) are interpolated by the Provisioner before injecting as VM user-data.
+
+### Done
+- **CloudInitContext expanded** (`packages/bootstrapper/src/types.ts`):
+  - `hostname?: string` — VM hostname (e.g. "hivemi-agent-atlas")
+  - `releaseUrl?: string` — GitHub Release URL for downloading the bootstrap script
+  - `ghToken?: string` — GitHub token for private repo access
+
+- **Cloud-init template rewritten** (`packages/bootstrapper/src/phases/cloud-init.ts`):
+  - Sets `hostname` via cloud-init `hostname:` directive + `hostnamectl set-hostname` in runcmd
+  - Sets `manage_etc_hosts: true` for automatic /etc/hosts update
+  - Three modes for runcmd:
+    1. **Private repo** (releaseUrl + ghToken): Downloads `hivemi-agent-bootstrap.sh` with `Authorization: token` header, executes with both args
+    2. **Public repo** (releaseUrl only): Downloads without auth, executes with releaseUrl arg
+    3. **Legacy fallback** (no releaseUrl): Direct OpenClaw install via `curl | bash` — backward compatible
+  - Bootstrap output logged to `/var/log/hivemi-bootstrap.log` via `tee`
+  - Completion flag `/tmp/hivemi-cloud-init-done` always written last (all modes)
+  - `final_message` includes hostname for identification
+
+- **Deploy Orchestrator updated** (`apps/manager/src/lib/deploy-orchestrator.ts`):
+  - Passes `hostname`, `releaseUrl`, and `ghToken` from cloud config to `generateCloudInit`
+  - `IBootstrapperOps.generateCloudInit` interface typed with proper context fields (was `any`)
+
+- **Manager routes proxy fixed** (`apps/manager/src/routes.ts`):
+  - Replaced inline duplicate cloud-init template with lazy-loaded import of real `generateCloudInit` from `@hivemi/bootstrapper`
+  - Minimal fallback only if import fails
+
+- **15 new cloud-init tests** (was 4, now 15):
+  - Basic structure: `#cloud-config` header, SSH key, openclaw user, required packages
+  - Swap: enabled with custom size, disabled, default 2048MB
+  - Hostname: custom hostname in config + runcmd, default hostname, in final_message
+  - Bootstrap script: private repo (with auth), public repo (no auth), legacy fallback
+  - Completion flag: written in all modes
+  - Full integration: all variables combined in single template
+
+### Key Decisions
+- **Three modes, not just one** — the template supports private repo (auth), public repo (no auth), and legacy (no releaseUrl). This ensures backward compatibility and flexibility during development.
+- **`hostnamectl` in runcmd AND `hostname:` directive** — cloud-init's `hostname:` sets it during cloud-init. `hostnamectl` in runcmd is belt-and-suspenders, ensuring systemd knows the hostname too. Some cloud providers override cloud-init's hostname module, so both methods maximize reliability.
+- **Log to `/var/log/hivemi-bootstrap.log`** — bootstrap script output is tee'd to a log file for debugging. If cloud-init completes but the daemon doesn't register, this log tells us exactly what happened.
+- **Replaced inline duplicate in manager routes** — the routes.ts had a full copy of the old cloud-init template. Replaced with a proper import from the bootstrapper package, eliminating the maintenance burden of keeping two copies in sync.
+- **Completion flag after everything** — `/tmp/hivemi-cloud-init-done` is the last command in all modes. The Bootstrapper polls for this flag, so it must only appear after the bootstrap script finishes.
+
+### Template Output (with all variables)
+```yaml
+#cloud-config
+hostname: hivemi-agent-atlas
+manage_etc_hosts: true
+
+users:
+  - name: openclaw
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+packages: [curl, jq, git, htop, unzip]
+
+swap:
+  filename: /swapfile
+  size: 2147483648
+
+runcmd:
+  - hostnamectl set-hostname "hivemi-agent-atlas"
+  - |
+    export RELEASE_URL="${RELEASE_URL}"
+    export GH_TOKEN="${GH_TOKEN}"
+    curl -fsSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" \
+      -o /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL/hivemi-agent-bootstrap.sh"
+    chmod +x /tmp/hivemi-agent-bootstrap.sh
+    /tmp/hivemi-agent-bootstrap.sh "$RELEASE_URL" "$GH_TOKEN" 2>&1 | tee /var/log/hivemi-bootstrap.log
+  - touch /tmp/hivemi-cloud-init-done
+  - chown openclaw:openclaw /tmp/hivemi-cloud-init-done
+
+final_message: "HiveMI cloud-init complete for hivemi-agent-atlas after $UPTIME seconds"
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/bootstrapper/src/types.ts` | +hostname, +releaseUrl, +ghToken in CloudInitContext |
+| `packages/bootstrapper/src/phases/cloud-init.ts` | Rewritten: bootstrap script download + execution + 3 modes |
+| `packages/bootstrapper/src/__tests__/bootstrapper.test.ts` | 15 cloud-init tests (was 4) |
+| `apps/manager/src/lib/deploy-orchestrator.ts` | Pass hostname/releaseUrl/ghToken, typed interface |
+| `apps/manager/src/routes.ts` | Replace inline template with bootstrapper import |
+
+### Commits
+- `8196677` — feat(bootstrapper): cloud-init template with bootstrap script support (#58)
+
+### Next
+- #66 (Bootstrap Script) — the `hivemi-agent-bootstrap.sh` that cloud-init downloads and runs
+- #65 (Release Pipeline) — where the bootstrap script is published
+- #44 (Provisioner) — uses cloud-init template via `spec.userData`
+
+---
+
 ## 2026-02-11 — Issue #57: Protocol — Batch Log Shipping
 
 ### Summary
