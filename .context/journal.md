@@ -1,5 +1,55 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #65: CI/CD — Agent Daemon Build & Release Pipeline
+
+### Summary
+Created GitHub Actions workflow that builds the daemon and publishes artifacts as a GitHub Release. Also created the VM bootstrap shell script.
+
+### What was done
+
+1. **GitHub Actions workflow** (`.github/workflows/agent-daemon-release.yml`):
+   - Triggers on push to `main` when `packages/agent-daemon/**` changes
+   - Full pipeline: checkout → pnpm + Node 22 → install → build (with workspace deps via `--filter ...`) → test → package → release
+   - Packages tarball (`hivemi-daemon.tar.gz`) with `dist/`, `package.json`, `systemd/hivemi-agent.service` (excludes test files)
+   - Creates GitHub Release with tag `daemon-v{version}` (reads version from `package.json`)
+   - Smart tag check: skips release creation if tag already exists (prevents duplicate releases without version bump)
+   - Uses `softprops/action-gh-release@v2` for release creation with both artifacts
+
+2. **Bootstrap script** (`packages/agent-daemon/hivemi-agent-bootstrap.sh`):
+   - Called by cloud-init with `$RELEASE_URL` and optional `$GH_TOKEN` args
+   - Downloads daemon tarball from GitHub Release (supports private repo auth)
+   - Extracts to `/home/openclaw/.hivemi/daemon/`
+   - Waits for Node.js availability (OpenClaw install runs in parallel via cloud-init)
+   - Installs production dependencies via `npm install --omit=dev`
+   - Installs systemd service, enables it
+   - Starts daemon only if `.env` exists (bootstrapper injects config via SSH later)
+
+3. **Build fix** — `TaskExecutor` had unused `registry` field causing `noUnusedLocals` TS error. Marked constructor param as `_registry` since it's not yet consumed.
+
+4. **Test fix** — Updated test that expected `component === "task-poller"` to `"task-executor"` since successful task execution logs come from TaskExecutor.
+
+### Key Decisions
+- **Build filter uses `...` suffix** (`--filter @hivemi/agent-daemon...`) to build workspace dependencies (`@hivemi/protocol`) first
+- **Tag-based dedup** — if `daemon-v{version}` tag exists, skip release. Forces intentional version bumps.
+- **Bootstrap waits for Node.js** up to 300s — cloud-init runs OpenClaw install in parallel, and the bootstrap script needs Node.js to be available
+- **Daemon starts conditionally** — only if `.env` exists, since the bootstrapper injects secrets via SSH after cloud-init completes
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `.github/workflows/agent-daemon-release.yml` | NEW — CI/CD pipeline |
+| `packages/agent-daemon/hivemi-agent-bootstrap.sh` | NEW — VM bootstrap script |
+| `packages/agent-daemon/src/task-executor.ts` | Fix unused registry param |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Fix component assertion |
+
+### Commits
+- `b55fd81` — feat(ci): agent daemon build & release pipeline (#65)
+- `2f2e811` — fix(daemon): resolve unused registry param in TaskExecutor
+
+### Next: #66 (Bootstrap Script — full bootstrapper integration) — the shell script created here is the artifact; #66 covers the TypeScript bootstrapper that orchestrates cloud-init + SSH + secret injection
+
+---
+
 ## 2026-02-12 — Issue #63: Provisioner — VM Reconciliation & Cost Estimation
 
 ### Summary
