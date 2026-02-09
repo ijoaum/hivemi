@@ -531,6 +531,12 @@ async function runIssue(issueNumber, dryRun = false) {
   if (parsed.status === "unknown") {
     const tail = (result.content || "").slice(-500);
     log("warn", `Content tail (last 500 chars): ${tail}`);
+    // Dump full content to file for inspection
+    const dumpPath = join(RUNS_DIR, `issue-${issueNumber}-content-${Date.now()}.txt`);
+    try {
+      writeFileSync(dumpPath, result.content || "(empty)");
+      log("warn", `Full content dumped to ${dumpPath} (${(result.content || "").length} chars)`);
+    } catch {}
   }
 
   // Comment on issue with result
