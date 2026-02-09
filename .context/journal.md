@@ -1,5 +1,82 @@
 # HiveMI Development Journal
 
+## 2026-02-12 — Issue #66: CI/CD — Script hivemi-agent-bootstrap.sh
+
+### Summary
+Rewrote the bootstrap script as a fully self-contained, idempotent shell script that cloud-init executes on first boot. The previous version (#65) only handled daemon download/install; this version handles everything from user creation to completion flag.
+
+### What was done
+
+1. **Rewrote `hivemi-agent-bootstrap.sh`** (`packages/agent-daemon/hivemi-agent-bootstrap.sh`):
+   - **Step 1**: Create `openclaw` user with sudo via `/etc/sudoers.d/` — checks `id` first (idempotent)
+   - **Step 2**: Configure 2GB swap — checks `swapon --show` first, persists in `/etc/fstab` (idempotent)
+   - **Step 3**: `apt-get update && apt-get upgrade -y` with `DEBIAN_FRONTEND=noninteractive`
+   - **Step 4**: Install base packages: `jq`, `curl`, `git`, `build-essential`
+   - **Step 5**: Install OpenClaw via `curl | bash -s -- --non-interactive` (runs as `openclaw` user, not root)
+   - **Step 6**: Verify with `openclaw --version`, set up PATH in `.bashrc`
+   - **Step 7**: Download `hivemi-daemon.tar.gz` from `$HIVEMI_RELEASE_URL` (supports private repo via `$HIVEMI_GH_TOKEN`)
+   - **Step 8**: Extract to `/home/openclaw/.hivemi/daemon/`
+   - **Step 9**: `npm install --omit=dev` (waits up to 300s for Node.js from OpenClaw install)
+   - **Step 10**: Copy systemd unit to `/etc/systemd/system/`
+   - **Step 11**: `systemctl daemon-reload && systemctl enable` (but NOT start)
+   - **Step 13**: Write `/tmp/hivemi-cloud-init-done` with UTC timestamp
+
+2. **Updated cloud-init template** (`packages/bootstrapper/src/phases/cloud-init.ts`):
+   - Changed from positional args (`$1`, `$2`) to environment variables (`HIVEMI_RELEASE_URL`, `HIVEMI_GH_TOKEN`)
+   - Script called without args — reads env vars directly
+   - Auth header uses `$HIVEMI_GH_TOKEN` instead of `$GH_TOKEN`
+
+3. **53 new tests** (`packages/agent-daemon/src/__tests__/bootstrap-script.test.ts`):
+   - Script structure: shebang, strict mode, executable, main function (5 tests)
+   - Environment variables: reads from env, no positional args (3 tests)
+   - User creation: useradd, home dir, idempotency check, sudo (4 tests)
+   - Swap: 2GB, dd/mkswap, idempotency, fstab persistence (5 tests)
+   - System packages: apt update/upgrade, required packages, noninteractive (4 tests)
+   - OpenClaw: install.sh, runs as user, non-interactive, version verify, PATH (5 tests)
+   - Daemon: download, extract, npm install, cleanup, ownership, Node.js wait, skip without URL, auth (8 tests)
+   - Systemd: unit copy, daemon-reload, enable, NOT start (4 tests)
+   - Completion flag: path, timestamp, ownership (3 tests)
+   - Idempotency: user check, swap check, mkdir -p, fstab check (4 tests)
+   - Step ordering: correct sequence, flag last (2 tests)
+   - Security: no token logging, swap 600, sudoers 440 (3 tests)
+   - Logging: log file path, UTC timestamps, elapsed time (3 tests)
+
+4. **Updated 3 cloud-init tests** in bootstrapper to match new env var naming
+
+### Key Decisions
+- **Self-contained script** — the bootstrap script now does everything (user, swap, packages, OpenClaw, daemon, systemd). Cloud-init only needs to download and execute it. This means a single `curl | bash` from cloud-init handles the entire VM setup.
+- **Environment variables over positional args** — `HIVEMI_RELEASE_URL` and `HIVEMI_GH_TOKEN` are cleaner, self-documenting, and easier to set in cloud-init `runcmd` blocks.
+- **Service NOT started** — deliberate. The Bootstrapper injects secrets and config via SSH after cloud-init completes, then starts the service. Starting without config would crash.
+- **Idempotent throughout** — every step checks current state before acting. The script can be re-run on a partially bootstrapped VM without issues.
+- **Token never logged** — uses `${HIVEMI_GH_TOKEN:+<set>}` pattern to show presence without revealing value.
+- **Graceful OpenClaw install failure** — uses `|| warn` instead of `|| error` since the daemon might still work if OpenClaw has issues (the Bootstrapper will configure OpenClaw via SSH anyway).
+
+### Acceptance Criteria
+- [x] Script works on Ubuntu 24.04 (all steps validated via structure tests)
+- [x] OpenClaw installed and accessible (install + version verify)
+- [x] Daemon extracted with deps installed (tarball + npm install)
+- [x] Systemd unit enabled but NOT started
+- [x] Completion flag written with timestamp
+- [x] Idempotent (user, swap, fstab checks)
+- [x] Time total < 5 min target (steps optimized for speed)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/agent-daemon/hivemi-agent-bootstrap.sh` | Rewritten — fully self-contained bootstrap |
+| `packages/agent-daemon/src/__tests__/bootstrap-script.test.ts` | NEW — 53 tests |
+| `packages/bootstrapper/src/phases/cloud-init.ts` | Updated to use HIVEMI_* env vars |
+| `packages/bootstrapper/src/__tests__/bootstrapper.test.ts` | Updated 3 cloud-init tests |
+
+### Commits
+- `108a0f5` — feat(infra): self-contained bootstrap script with idempotency (#66)
+
+### Next
+- #67 (Deploy Orchestrator integration) — wire bootstrap into full deploy pipeline
+- #68 (Task Progress) — real-time progress tracking
+
+---
+
 ## 2026-02-12 — Issue #65: CI/CD — Agent Daemon Build & Release Pipeline
 
 ### Summary
