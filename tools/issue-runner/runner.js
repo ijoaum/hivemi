@@ -22,7 +22,7 @@
  *   OPENCLAW_MODEL          - Model to use (default: openclaw:main)
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
@@ -35,6 +35,20 @@ const CONTEXT_DIR = join(HIVEMI_ROOT, ".context");
 const TRACKER_PATH = join(CONTEXT_DIR, "issue-tracker.json");
 const RUNS_DIR = join(CONTEXT_DIR, "runs");
 const LOG_PATH = join(CONTEXT_DIR, "runner.log");
+
+// ─── Signal & crash logging ─────────────────────────────────────────────────
+
+function logCrash(reason) {
+  const msg = `[${new Date().toISOString()}] [FATAL] Runner died: ${reason}\n`;
+  try { appendFileSync(LOG_PATH, msg); } catch {}
+  console.error(msg);
+}
+
+process.on("SIGTERM", () => { logCrash("SIGTERM"); process.exit(143); });
+process.on("SIGINT", () => { logCrash("SIGINT"); process.exit(130); });
+process.on("SIGHUP", () => { logCrash("SIGHUP"); process.exit(129); });
+process.on("uncaughtException", (err) => { logCrash(`uncaughtException: ${err.stack || err.message}`); process.exit(1); });
+process.on("unhandledRejection", (err) => { logCrash(`unhandledRejection: ${err?.stack || err}`); process.exit(1); });
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
