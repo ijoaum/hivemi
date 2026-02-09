@@ -1,5 +1,107 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #60: Bootstrap — Secret Injection via SecretProvider
+
+### Summary
+Implemented the SecretProvider abstraction and secret injection into VMs during bootstrap. Secrets are resolved locally on the control plane and transmitted to the VM via SSH — never touching the control plane's disk. Supports two target types: environment variables (for the daemon's `.env`) and file targets (written directly to the VM with mode 600).
+
+### Done
+- **Enhanced `SecretMapping`** (`packages/bootstrapper/src/types.ts`):
+  - New `target` field with two formats: `env:VAR_NAME` and `file:/path/to/file`
+  - `required` field (default: `true`) — optional secrets are skipped gracefully
+  - Legacy `envVar` field preserved for backward compatibility
+  - `ParsedSecretTarget` type: `{ kind: "env" | "file", value: string }`
+  - `SecretInjectionResult` type: `{ envSecrets, fileSecrets, skipped }`
+
+- **Secret Utilities** (`packages/bootstrapper/src/secrets/utils.ts`):
+  - `parseSecretTarget(mapping)` — validates and parses target format
+  - Validates env var names (`/^[A-Za-z_][A-Za-z0-9_]*$/`)
+  - Validates file paths (must be absolute)
+  - `maskSecret(value)` — shows first 2 + last 2 chars, rest masked (caps at 20 asterisks)
+  - `isRequired(mapping)` — defaults to true when field is undefined
+
+- **Updated `injectSecrets()`** (`packages/bootstrapper/src/phases/configure.ts`):
+  - Now takes SSH client as first parameter (was provider-only before)
+  - Resolves secrets locally via provider, then injects into VM
+  - `env:` targets → collected in `envSecrets` map, written to `.env` by `installDaemon`
+  - `file:` targets → written directly to VM via `ssh.writeFile()` with mode 600
+  - Optional secrets that fail resolution are skipped and tracked in `result.skipped`
+  - Required secrets that fail resolution throw with clear error message
+  - Secret values are never logged — only masked versions appear
+  - Returns `SecretInjectionResult` instead of simple `Map<string, string>`
+
+- **1Password Provider** (`packages/bootstrapper/src/secrets/onepassword.ts`):
+  - `resolveAll()` now handles `required` field — skips optional missing secrets
+  - Uses `parseSecretTarget()` for target parsing
+  - Validates `op://` prefix on `getSecret()`
+  - Service account token passed via env var (never CLI arg)
+
+- **EnvFile Provider** (`packages/bootstrapper/src/secrets/envfile.ts`):
+  - `resolveAll()` now handles `required` field — skips optional missing secrets
+  - Uses `parseSecretTarget()` for target parsing
+  - Supports both env and file targets
+
+- **Deploy Orchestrator Updated** (`apps/manager/src/lib/deploy-orchestrator.ts`):
+  - Secret mappings now use `target: "env:HIVEMI_SECRET"` format
+  - Inline secret provider updated to parse target format
+
+- **44 new tests** (`packages/bootstrapper/src/__tests__/secrets.test.ts`):
+  - `parseSecretTarget`: env target, file target, deep path, legacy envVar, empty env var, empty file path, relative path, unknown format, no target/envVar, invalid env var (number start, special chars), underscores, underscore start (14 tests)
+  - `maskSecret`: long secrets, short secrets, exact 8 chars, empty string, cap at 20 asterisks (5 tests)
+  - `isRequired`: undefined (default), true, false (3 tests)
+  - `EnvFileProvider` detailed: known secrets, unknown, skip optional, throw required, default required, file targets, empty map (7 tests)
+  - `OnePasswordProvider` constructor: no token, constructor token, op:// validation (3 tests)
+  - `injectSecrets` full flow: env secrets, file secrets (mode 600), mixed targets, optional skip, required throw, explicit required throw, empty mappings, no secret values in logs, multiple file targets, default agent secrets (10 tests)
+  - Edge cases: single char var, root file path, case sensitivity (3 tests)
+
+- **Updated 3 existing tests** in `bootstrapper.test.ts` to match new `injectSecrets` signature
+
+### Key Decisions
+- **SSH-based injection** — secrets are resolved on the control plane and transmitted via SSH (encrypted). The control plane never writes secrets to its own disk (they stay in memory).
+- **Two target types, not just env** — `file:` targets allow writing secrets directly as files (e.g., TLS certs, API tokens at specific paths). `env:` targets are collected and written to the daemon's `.env` file by `installDaemon`.
+- **Optional secrets gracefully skipped** — `required: false` lets callers mark non-critical secrets. Missing optional secrets don't fail the bootstrap; they're tracked in `skipped` for visibility.
+- **Default required=true** — without explicit `required: false`, all secrets are required. This is the safer default — you must opt-in to optional behavior.
+- **Secret masking in logs** — `maskSecret()` ensures values never appear in logs. Only the first 2 and last 2 chars are shown, with a capped number of asterisks.
+- **Env var name validation** — `parseSecretTarget` validates env var names match `[A-Za-z_][A-Za-z0-9_]*` to prevent injection via malformed names.
+- **Legacy backward compat** — old `envVar` field still works via fallback in `parseSecretTarget`. Existing code using `{ ref, envVar }` format continues to work.
+
+### Security Model
+```
+Control Plane                     VM
+┌──────────────────┐              ┌──────────────────┐
+│ SecretProvider    │              │                  │
+│ ┌──────────────┐ │              │ .env (mode 600)  │
+│ │ 1Password    │ │  SSH (enc)   │ ├─ API_KEY=...   │
+│ │ op read ref  │─┼─────────────►│ └─ HIVEMI_=...   │
+│ └──────────────┘ │              │                  │
+│ (in memory only) │              │ /path/to/file    │
+│ (never on disk)  │              │ (mode 600)       │
+└──────────────────┘              └──────────────────┘
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/bootstrapper/src/types.ts` | Enhanced SecretMapping (target, required), +ParsedSecretTarget, +SecretInjectionResult |
+| `packages/bootstrapper/src/secrets/utils.ts` | NEW — parseSecretTarget, maskSecret, isRequired |
+| `packages/bootstrapper/src/secrets/onepassword.ts` | Updated resolveAll for required/target |
+| `packages/bootstrapper/src/secrets/envfile.ts` | Updated resolveAll for required/target |
+| `packages/bootstrapper/src/phases/configure.ts` | injectSecrets now takes SSH, writes file targets, returns SecretInjectionResult |
+| `packages/bootstrapper/src/index.ts` | Export new types and utils |
+| `packages/bootstrapper/src/__tests__/secrets.test.ts` | NEW — 44 tests |
+| `packages/bootstrapper/src/__tests__/bootstrapper.test.ts` | Updated 3 injectSecrets tests for new signature |
+| `apps/manager/src/lib/deploy-orchestrator.ts` | Updated secret mappings to target format |
+
+### Commits
+- `86b617d` — feat(bootstrapper): secret injection via SSH with SecretProvider abstraction (#60)
+
+### Next
+- #66 (Bootstrap Script) — the shell script that cloud-init downloads and runs
+- #44 (Provisioner) — provisions the VM before bootstrap kicks in
+- #64 (Daemon ↔ OpenClaw integration) — deeper runtime integration
+
+---
+
 ## 2026-02-11 — Issue #59: Bootstrap Fase 2 — Configuração via SSH
 
 ### Summary
