@@ -1,6 +1,6 @@
 // =============================================================================
 // DigitalOcean Cloud Provider
-// Full implementation using DO API v2
+// Full implementation using DO API v2 with rate limiting and pagination
 // =============================================================================
 
 import { Socket } from "node:net";
@@ -23,11 +23,11 @@ const DO_API = "https://api.digitalocean.com/v2";
 /**
  * DigitalOcean size mappings.
  *
- * | Abstrato | vCPU | RAM | DO slug        | ~Custo/mês |
- * |----------|------|-----|----------------|------------|
- * | small    | 1    | 1GB | s-1vcpu-1gb    | $6         |
- * | medium   | 2    | 2GB | s-2vcpu-2gb    | $12        |
- * | large    | 2    | 4GB | s-2vcpu-4gb    | $24        |
+ * | Abstract | vCPU | RAM | DO slug         | ~Cost/mo |
+ * |----------|------|-----|-----------------|----------|
+ * | small    | 1    | 1GB | s-1vcpu-1gb     | $6       |
+ * | medium   | 2    | 2GB | s-2vcpu-2gb     | $12      |
+ * | large    | 2    | 4GB | s-2vcpu-4gb-amd | $24      |
  */
 const DO_SIZE_MAPPINGS: SizeMappings = {
   small: { slug: "s-1vcpu-1gb", vcpu: 1, memoryMb: 1024, monthlyCostUsd: 6 },
@@ -37,6 +37,23 @@ const DO_SIZE_MAPPINGS: SizeMappings = {
 
 const DEFAULT_IMAGE = "ubuntu-24-04-x64";
 const DEFAULT_REGION = "nyc1";
+
+/**
+ * Supported DigitalOcean regions.
+ * Validated on createInstance to fail fast on typos.
+ */
+const SUPPORTED_REGIONS = new Set([
+  "nyc1", "nyc3",  // New York
+  "sfo3",          // San Francisco
+  "ams3",          // Amsterdam
+  "sgp1",          // Singapore
+]);
+
+/** Maximum retries for rate-limited (429) requests */
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+/** Base backoff in ms for 429 retries (doubles each attempt) */
+const RATE_LIMIT_BACKOFF_MS = 1000;
 
 /** Map DO droplet status to our abstract status */
 function mapStatus(doStatus: string): InstanceStatus {
@@ -97,6 +114,21 @@ interface DOFirewallRule {
   destinations?: { addresses: string[] };
 }
 
+/** Pagination metadata from DO API responses */
+interface DOPagination {
+  pages?: {
+    next?: string;
+    last?: string;
+  };
+  total?: number;
+}
+
+/** Rate limit state tracked across API calls */
+interface RateLimitState {
+  remaining: number | null;
+  resetAt: number | null;
+}
+
 /**
  * Check if a TCP port is reachable on a host.
  */
@@ -151,6 +183,37 @@ function parseDroplet(droplet: DODroplet): Instance {
   };
 }
 
+/**
+ * Error thrown when the DO API returns a rate limit (429) and all retries are exhausted.
+ */
+export class RateLimitError extends Error {
+  readonly retryAfterMs: number;
+  readonly remaining: number;
+
+  constructor(retryAfterMs: number, remaining: number) {
+    super(`DigitalOcean rate limit exceeded. Retry after ${retryAfterMs}ms (remaining: ${remaining})`);
+    this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
+    this.remaining = remaining;
+  }
+}
+
+/**
+ * Error thrown when an unsupported region is specified.
+ */
+export class UnsupportedRegionError extends Error {
+  readonly region: string;
+  readonly supported: string[];
+
+  constructor(region: string) {
+    const supported = [...SUPPORTED_REGIONS].sort();
+    super(`Unsupported region "${region}". Supported: ${supported.join(", ")}`);
+    this.name = "UnsupportedRegionError";
+    this.region = region;
+    this.supported = supported;
+  }
+}
+
 export class DigitalOceanProvider implements ICloudProvider {
   readonly name = "digitalocean";
   readonly sizeMappings = DO_SIZE_MAPPINGS;
@@ -159,6 +222,9 @@ export class DigitalOceanProvider implements ICloudProvider {
   private readonly defaultRegion: string;
   private readonly defaultImage: string;
   private readonly log: ProvisionerLogger;
+
+  /** Track rate limit state from response headers */
+  private rateLimit: RateLimitState = { remaining: null, resetAt: null };
 
   constructor(config: ProviderConfig, logger?: ProvisionerLogger) {
     if (!config.token) {
@@ -170,40 +236,162 @@ export class DigitalOceanProvider implements ICloudProvider {
     this.log = logger ?? consoleLogger;
   }
 
+  /**
+   * Get current rate limit state (for monitoring/debugging).
+   */
+  getRateLimitState(): Readonly<RateLimitState> {
+    return { ...this.rateLimit };
+  }
+
+  /**
+   * Get the set of supported regions.
+   */
+  static getSupportedRegions(): ReadonlySet<string> {
+    return SUPPORTED_REGIONS;
+  }
+
   // ---------------------------------------------------------------------------
   // Internal API helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * Update rate limit tracking from response headers.
+   */
+  private updateRateLimit(res: Response): void {
+    const remaining = res.headers.get("ratelimit-remaining");
+    const reset = res.headers.get("ratelimit-reset");
+
+    if (remaining !== null) {
+      this.rateLimit.remaining = parseInt(remaining, 10);
+    }
+    if (reset !== null) {
+      this.rateLimit.resetAt = parseInt(reset, 10) * 1000; // convert to ms
+    }
+
+    // Warn when getting low
+    if (this.rateLimit.remaining !== null && this.rateLimit.remaining < 100) {
+      this.log.warn(`DO rate limit low: ${this.rateLimit.remaining} remaining`);
+    }
+  }
+
+  /**
+   * Calculate retry delay from response headers or use exponential backoff.
+   */
+  private getRetryDelay(res: Response, attempt: number): number {
+    const retryAfter = res.headers.get("retry-after");
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10);
+      if (!isNaN(seconds)) {
+        return seconds * 1000;
+      }
+    }
+    // Exponential backoff: 1s, 2s, 4s
+    return RATE_LIMIT_BACKOFF_MS * Math.pow(2, attempt);
+  }
+
+  /**
+   * Core API request with rate limit handling and retries.
+   */
   private async api<T>(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const url = `${DO_API}${path}`;
+    const url = path.startsWith("http") ? path : `${DO_API}${path}`;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       "Content-Type": "application/json",
     };
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(
-        `DO API ${method} ${path} failed (${res.status}): ${text}`,
-      );
+      this.updateRateLimit(res);
+
+      // Handle rate limiting (429)
+      if (res.status === 429) {
+        const delay = this.getRetryDelay(res, attempt);
+
+        if (attempt < MAX_RATE_LIMIT_RETRIES) {
+          this.log.warn(
+            `Rate limited (429) on ${method} ${path}, retry ${attempt + 1}/${MAX_RATE_LIMIT_RETRIES} after ${delay}ms`,
+          );
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+
+        // All retries exhausted
+        throw new RateLimitError(delay, this.rateLimit.remaining ?? 0);
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(
+          `DO API ${method} ${path} failed (${res.status}): ${text}`,
+        );
+      }
+
+      // 204 No Content
+      if (res.status === 204) {
+        return undefined as T;
+      }
+
+      return (await res.json()) as T;
     }
 
-    // 204 No Content
-    if (res.status === 204) {
-      return undefined as T;
+    // Should never reach here, but TypeScript needs it
+    throw new Error(`DO API ${method} ${path}: exceeded max retries`);
+  }
+
+  /**
+   * Paginated GET — collects all pages for a list endpoint.
+   * Extracts items from the response using the given key.
+   */
+  private async apiPaginated<T>(
+    basePath: string,
+    key: string,
+  ): Promise<T[]> {
+    const allItems: T[] = [];
+    let url: string | null = basePath.startsWith("http")
+      ? basePath
+      : `${DO_API}${basePath}`;
+
+    // Ensure per_page is set
+    if (!url.includes("per_page=")) {
+      url += (url.includes("?") ? "&" : "?") + "per_page=200";
     }
 
-    return (await res.json()) as T;
+    while (url) {
+      const data = await this.api<Record<string, unknown>>("GET", url);
+
+      const items = data[key] as T[] | undefined;
+      if (items && Array.isArray(items)) {
+        allItems.push(...items);
+      }
+
+      // Check for next page
+      const links = data.links as DOPagination | undefined;
+      url = links?.pages?.next ?? null;
+    }
+
+    return allItems;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Region validation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Validate that a region is in the supported set.
+   */
+  private validateRegion(region: string): void {
+    if (!SUPPORTED_REGIONS.has(region)) {
+      throw new UnsupportedRegionError(region);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -211,11 +399,16 @@ export class DigitalOceanProvider implements ICloudProvider {
   // ---------------------------------------------------------------------------
 
   async createInstance(spec: InstanceSpec): Promise<Instance> {
-    this.log.info(`Creating droplet "${spec.name}" (${spec.size}) in ${spec.region || this.defaultRegion}`);
+    const region = spec.region || this.defaultRegion;
+
+    // Validate region
+    this.validateRegion(region);
+
+    this.log.info(`Creating droplet "${spec.name}" (${spec.size}) in ${region}`);
 
     const body: Record<string, unknown> = {
       name: spec.name,
-      region: spec.region || this.defaultRegion,
+      region,
       size: sizeToSlug(spec.size),
       image: spec.image || this.defaultImage,
       ssh_keys: [spec.sshKeyId],
@@ -257,11 +450,11 @@ export class DigitalOceanProvider implements ICloudProvider {
     // DO API supports filtering by a single tag
     const tag = tags?.[0];
     const path = tag
-      ? `/droplets?tag_name=${encodeURIComponent(tag)}&per_page=200`
-      : "/droplets?per_page=200";
+      ? `/droplets?tag_name=${encodeURIComponent(tag)}`
+      : "/droplets";
 
-    const data = await this.api<{ droplets: DODroplet[] }>("GET", path);
-    let instances = data.droplets.map(parseDroplet);
+    const droplets = await this.apiPaginated<DODroplet>(path, "droplets");
+    let instances = droplets.map(parseDroplet);
 
     // If multiple tags requested, filter client-side
     if (tags && tags.length > 1) {
@@ -313,9 +506,8 @@ export class DigitalOceanProvider implements ICloudProvider {
   async ensureSSHKey(name: string, publicKey: string): Promise<string> {
     this.log.info(`Ensuring SSH key "${name}" exists`);
 
-    // Check if key exists by name
-    const data = await this.api<{ ssh_keys: DOSSHKey[] }>("GET", "/account/keys?per_page=200");
-    const existing = data.ssh_keys.find((k) => k.name === name);
+    const keys = await this.apiPaginated<DOSSHKey>("/account/keys", "ssh_keys");
+    const existing = keys.find((k) => k.name === name);
 
     if (existing) {
       this.log.info(`SSH key "${name}" already exists (ID: ${existing.id})`);
@@ -335,9 +527,8 @@ export class DigitalOceanProvider implements ICloudProvider {
   async ensureFirewall(name: string, rules: FirewallRule[]): Promise<string> {
     this.log.info(`Ensuring firewall "${name}" exists`);
 
-    // Check if firewall exists
-    const data = await this.api<{ firewalls: DOFirewall[] }>("GET", "/firewalls?per_page=200");
-    const existing = data.firewalls.find((fw) => fw.name === name);
+    const firewalls = await this.apiPaginated<DOFirewall>("/firewalls", "firewalls");
+    const existing = firewalls.find((fw) => fw.name === name);
 
     const doInbound = rules
       .filter((r) => r.direction === "inbound")

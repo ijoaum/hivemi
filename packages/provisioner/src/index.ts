@@ -28,7 +28,7 @@ export type {
 export { consoleLogger } from "./types.js";
 
 // Providers
-export { DigitalOceanProvider } from "./providers/digitalocean.js";
+export { DigitalOceanProvider, RateLimitError, UnsupportedRegionError } from "./providers/digitalocean.js";
 export { GCPProvider } from "./providers/gcp.js";
 
 // Managers
