@@ -34,6 +34,15 @@ export { GCPProvider } from "./providers/gcp.js";
 // Managers
 export { SSHKeyManager } from "./ssh-key.js";
 export { FirewallManager, createDefaultRules } from "./firewall.js";
+export { InfraManager } from "./infra-manager.js";
+export type { ISecretStore, InfraState, InfraSetupResult } from "./infra-manager.js";
+
+// SSH Key Generation
+export { generateSSHKeyPair, isValidSSHPublicKey } from "./ssh-keygen.js";
+export type { SSHKeyPair } from "./ssh-keygen.js";
+
+// IP Detection
+export { detectControlPlaneIP, detectIPChange, clearIPCache, isValidIPv4 } from "./ip-detect.js";
 
 // Utilities
 export { reconcile } from "./reconciliation.js";

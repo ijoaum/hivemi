@@ -160,9 +160,10 @@ describe("createDefaultRules", () => {
     const inbound = rules.filter((r) => r.direction === "inbound");
     const outbound = rules.filter((r) => r.direction === "outbound");
 
-    expect(inbound).toHaveLength(2);
+    expect(inbound).toHaveLength(3); // SSH, daemon, ICMP
     expect(inbound[0]).toMatchObject({ protocol: "tcp", ports: "22", sources: ["165.245.132.133/32"] });
     expect(inbound[1]).toMatchObject({ protocol: "tcp", ports: "3100", sources: ["165.245.132.133/32"] });
+    expect(inbound[2]).toMatchObject({ protocol: "icmp", ports: "0", sources: ["0.0.0.0/0", "::/0"] });
 
     expect(outbound).toHaveLength(3); // tcp, udp, icmp
     expect(outbound.every((r) => r.sources.includes("0.0.0.0/0"))).toBe(true);
