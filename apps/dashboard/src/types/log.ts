@@ -1,4 +1,4 @@
-export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error" | "lifecycle";
 
 export interface LogEntry {
   id: string;
@@ -10,4 +10,5 @@ export interface LogEntry {
   taskId?: string;
   message: string;
   metadata?: Record<string, unknown>;
+  component?: string;
 }

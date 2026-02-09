@@ -186,8 +186,14 @@ export interface LogEntry {
 }
 
 export const logsApi = {
-  list: (params?: { limit?: number }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+  list: (params?: { limit?: number; agentId?: string; level?: string; from?: string; to?: string }) => {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) cleanParams[k] = String(v);
+      }
+    }
+    const query = new URLSearchParams(cleanParams).toString();
     return fetchApi<LogEntry[]>(`/api/logs${query ? `?${query}` : ""}`);
   },
 };
