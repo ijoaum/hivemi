@@ -224,3 +224,53 @@ export const demandsApi = {
       body: JSON.stringify(data),
     }),
 };
+
+// Infra — Reconciliation & Costs
+export interface ReconciliationIssue {
+  type: "orphaned_vm" | "phantom_agent" | "ip_mismatch";
+  severity: "warning" | "error";
+  message: string;
+  instanceId?: string;
+  instanceName?: string;
+  agentId?: string;
+  agentName?: string;
+}
+
+export interface ReconciliationReport {
+  issues: ReconciliationIssue[];
+  status: "clean" | "warning" | "critical";
+  timestamp: string;
+  provider: string;
+  stats: {
+    totalVMs: number;
+    healthy: number;
+    orphaned: number;
+    phantom: number;
+    ipMismatches: number;
+  };
+}
+
+export interface InstanceCostBreakdown {
+  name: string;
+  size: "small" | "medium" | "large";
+  monthlyCostUsd: number;
+  daysRunning: number;
+  accumulatedCostUsd: number;
+}
+
+export interface CostReport {
+  monthly: number;
+  projected: number;
+  accumulated: number;
+  breakdown: InstanceCostBreakdown[];
+  provider: string;
+  generatedAt: string;
+}
+
+export const infraApi = {
+  reconcile: () => fetchApi<ReconciliationReport>("/api/infra/reconcile"),
+  costs: () => fetchApi<CostReport>("/api/infra/costs"),
+  destroyOrphan: (instanceId: string) => fetchApi<{ message: string }>(`/api/infra/reconcile/orphan/${instanceId}`, {
+    method: "DELETE",
+  }),
+};

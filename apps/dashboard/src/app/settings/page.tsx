@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { useApi } from "@/hooks/use-api";
+import {
+  infraApi,
+  type ReconciliationReport,
+  type CostReport,
+} from "@/lib/api";
 import { 
   Settings, 
   Users, 
@@ -9,6 +15,7 @@ import {
   KeyRound, 
   Bell, 
   AlertTriangle,
+  Server,
   type LucideIcon
 } from "lucide-react";
 
@@ -20,6 +27,7 @@ interface SettingSection {
 
 const sections: SettingSection[] = [
   { id: "general", label: "General", icon: Settings },
+  { id: "infra", label: "Infrastructure", icon: Server },
   { id: "agents", label: "Agents", icon: Users },
   { id: "llm", label: "LLM Providers", icon: Brain },
   { id: "secrets", label: "Secrets", icon: KeyRound },
@@ -64,6 +72,7 @@ export default function SettingsPage() {
         {/* Content */}
         <div className="flex-1 max-w-2xl">
           {activeSection === "general" && <GeneralSettings />}
+          {activeSection === "infra" && <InfraSettings />}
           {activeSection === "agents" && <AgentSettings />}
           {activeSection === "llm" && <LLMSettings />}
           {activeSection === "secrets" && <SecretsSettings />}
@@ -104,6 +113,164 @@ function Toggle({ enabled, onChange, label }: { enabled: boolean; onChange: (v: 
         />
       </button>
     </label>
+  );
+}
+
+function InfraSettings() {
+  const reconcileFetcher = useCallback(() => infraApi.reconcile(), []);
+  const costsFetcher = useCallback(() => infraApi.costs(), []);
+
+  const { data: reconciliation, loading: reconcileLoading, refetch: refetchReconcile } = useApi<ReconciliationReport>(reconcileFetcher, { cacheKey: "infra-reconcile" });
+  const { data: costs, loading: costsLoading } = useApi<CostReport>(costsFetcher, { cacheKey: "infra-costs" });
+
+  const statusColor = {
+    clean: "text-green-400",
+    warning: "text-amber-400",
+    critical: "text-red-400",
+  };
+
+  const statusBg = {
+    clean: "bg-green-500/20",
+    warning: "bg-amber-500/20",
+    critical: "bg-red-500/20",
+  };
+
+  return (
+    <>
+      {/* Reconciliation */}
+      <SettingCard title="VM Reconciliation" description="Compare provider VMs against the registry to detect drift">
+        {reconcileLoading ? (
+          <div className="text-sm text-gray-500 animate-pulse">Running reconciliation...</div>
+        ) : reconciliation ? (
+          <div className="space-y-3 md:space-y-4">
+            {/* Status badge */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={cn("text-xs px-2 py-1 rounded-full font-medium", statusBg[reconciliation.status], statusColor[reconciliation.status])}>
+                  {reconciliation.status === "clean" ? "✓ Healthy" : reconciliation.status === "warning" ? "⚠ Issues" : "✗ Critical"}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {reconciliation.provider} • {new Date(reconciliation.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <button
+                onClick={() => refetchReconcile()}
+                className="text-xs text-amber-400 hover:text-amber-300"
+              >
+                Reconcile
+              </button>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="bg-gray-900/50 rounded-lg p-2 text-center">
+                <p className="text-lg font-bold text-white">{reconciliation.stats.totalVMs}</p>
+                <p className="text-xs text-gray-500">Total VMs</p>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-2 text-center">
+                <p className="text-lg font-bold text-green-400">{reconciliation.stats.healthy}</p>
+                <p className="text-xs text-gray-500">Healthy</p>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-2 text-center">
+                <p className={cn("text-lg font-bold", reconciliation.stats.orphaned > 0 ? "text-red-400" : "text-white")}>{reconciliation.stats.orphaned}</p>
+                <p className="text-xs text-gray-500">Orphaned</p>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-2 text-center">
+                <p className={cn("text-lg font-bold", reconciliation.stats.phantom > 0 ? "text-amber-400" : "text-white")}>{reconciliation.stats.phantom}</p>
+                <p className="text-xs text-gray-500">Phantom</p>
+              </div>
+            </div>
+
+            {/* Issues */}
+            {reconciliation.issues.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 font-medium">Issues</p>
+                {reconciliation.issues.map((issue, i) => (
+                  <div key={i} className={cn("p-2 rounded-lg border text-xs", issue.severity === "error" ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-amber-500/10 border-amber-500/30 text-amber-300")}>
+                    <div className="flex items-start justify-between gap-2">
+                      <span>{issue.message}</span>
+                      {issue.type === "orphaned_vm" && issue.instanceId && (
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Destroy orphaned VM ${issue.instanceName || issue.instanceId}?`)) {
+                              await infraApi.destroyOrphan(issue.instanceId!);
+                              refetchReconcile();
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-300 whitespace-nowrap flex-shrink-0"
+                        >
+                          Destroy
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {reconciliation.issues.length === 0 && (
+              <p className="text-xs text-gray-500">No inconsistencies detected.</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Could not load reconciliation data. Is the cloud provider configured?</p>
+        )}
+      </SettingCard>
+
+      {/* Costs */}
+      <SettingCard title="Cost Estimation" description="Estimated infrastructure costs based on active VMs">
+        {costsLoading ? (
+          <div className="text-sm text-gray-500 animate-pulse">Calculating costs...</div>
+        ) : costs ? (
+          <div className="space-y-3 md:space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+                <p className="text-xl font-bold text-white">${costs.monthly}</p>
+                <p className="text-xs text-gray-500">Monthly</p>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+                <p className="text-xl font-bold text-amber-400">${costs.projected}</p>
+                <p className="text-xs text-gray-500">Projected</p>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+                <p className="text-xl font-bold text-green-400">${costs.accumulated}</p>
+                <p className="text-xs text-gray-500">Accumulated</p>
+              </div>
+            </div>
+
+            {/* Breakdown */}
+            {costs.breakdown.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 font-medium">Per-Instance Breakdown</p>
+                {costs.breakdown.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 bg-gray-900/50 rounded-lg border border-gray-700">
+                    <div>
+                      <p className="text-sm text-white">{item.name}</p>
+                      <p className="text-xs text-gray-500">{item.size} • {item.daysRunning}d running</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-white">${item.monthlyCostUsd}/mo</p>
+                      <p className="text-xs text-gray-500">${item.accumulatedCostUsd} accrued</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {costs.breakdown.length === 0 && (
+              <p className="text-xs text-gray-500">No active VMs. Deploy an agent to see cost estimates.</p>
+            )}
+
+            <p className="text-xs text-gray-600">
+              Provider: {costs.provider} • Updated: {new Date(costs.generatedAt).toLocaleTimeString()}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Could not load cost data. Is the cloud provider configured?</p>
+        )}
+      </SettingCard>
+    </>
   );
 }
 

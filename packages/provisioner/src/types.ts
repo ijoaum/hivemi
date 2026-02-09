@@ -143,6 +143,19 @@ export interface SizeMapping {
 export type SizeMappings = Record<InstanceSize, SizeMapping>;
 
 /**
+ * Cost breakdown for a single instance.
+ */
+export interface InstanceCostBreakdown {
+  name: string;
+  size: InstanceSize;
+  monthlyCostUsd: number;
+  /** Days this instance has been running */
+  daysRunning: number;
+  /** Accumulated cost for time running (prorated) */
+  accumulatedCostUsd: number;
+}
+
+/**
  * Cost estimate for a set of instances.
  */
 export interface CostEstimate {
@@ -154,6 +167,44 @@ export interface CostEstimate {
   }>;
   totalMonthlyCostUsd: number;
   summary: string;
+}
+
+/**
+ * Enhanced cost report with projections and accumulated costs.
+ */
+export interface CostReport {
+  /** Monthly cost if all current VMs run for a full month */
+  monthly: number;
+  /** Projected cost based on current month usage */
+  projected: number;
+  /** Accumulated cost so far this month */
+  accumulated: number;
+  /** Per-instance breakdown */
+  breakdown: InstanceCostBreakdown[];
+  /** Provider name */
+  provider: string;
+  /** When this report was generated */
+  generatedAt: string;
+}
+
+/**
+ * A reconciliation issue — either orphaned VM or phantom agent.
+ */
+export interface ReconciliationIssue {
+  /** Type of inconsistency */
+  type: "orphaned_vm" | "phantom_agent" | "ip_mismatch";
+  /** Severity: orphaned VMs cost money, phantom agents are misleading */
+  severity: "warning" | "error";
+  /** Human-readable description */
+  message: string;
+  /** Instance ID (for orphaned VMs) */
+  instanceId?: string;
+  /** Instance name (for orphaned VMs) */
+  instanceName?: string;
+  /** Agent ID (for phantom agents) */
+  agentId?: string;
+  /** Agent name (for phantom agents) */
+  agentName?: string;
 }
 
 /**
@@ -169,6 +220,30 @@ export interface ReconciliationResult {
 }
 
 /**
+ * Enhanced reconciliation report with structured issues and metadata.
+ */
+export interface ReconciliationReport {
+  /** Base reconciliation result */
+  result: ReconciliationResult;
+  /** Structured issues for the Dashboard */
+  issues: ReconciliationIssue[];
+  /** Overall health: clean = no issues, warning = some, critical = many orphans */
+  status: "clean" | "warning" | "critical";
+  /** When this reconciliation was performed */
+  timestamp: string;
+  /** Provider name */
+  provider: string;
+  /** Summary statistics */
+  stats: {
+    totalVMs: number;
+    healthy: number;
+    orphaned: number;
+    phantom: number;
+    ipMismatches: number;
+  };
+}
+
+/**
  * Registry agent info needed for reconciliation.
  * Minimal shape — just what the provisioner needs, not the full Agent type.
  */
@@ -177,6 +252,10 @@ export interface RegistryAgent {
   name: string;
   instanceId: string | null;
   status: string;
+  /** Public IP from agent record (for IP validation) */
+  host?: string;
+  /** Private IP from cloud info */
+  privateIp?: string | null;
 }
 
 /**

@@ -18,7 +18,11 @@ export type {
   SizeMapping,
   SizeMappings,
   CostEstimate,
+  CostReport,
+  InstanceCostBreakdown,
   ReconciliationResult,
+  ReconciliationReport,
+  ReconciliationIssue,
   RegistryAgent,
   ICloudProvider,
   ProviderConfig,
@@ -45,8 +49,8 @@ export type { SSHKeyPair } from "./ssh-keygen.js";
 export { detectControlPlaneIP, detectIPChange, clearIPCache, isValidIPv4 } from "./ip-detect.js";
 
 // Utilities
-export { reconcile } from "./reconciliation.js";
-export { estimateCost, estimateInstanceCost, estimateCostFromInstances } from "./cost.js";
+export { reconcile, detectIPMismatches, generateReconciliationReport } from "./reconciliation.js";
+export { estimateCost, estimateInstanceCost, estimateCostFromInstances, generateCostReport } from "./cost.js";
 
 // ---------------------------------------------------------------------------
 // Factory — convenience function to create a provider by name

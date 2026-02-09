@@ -12,6 +12,7 @@ import { registryClient } from "./lib/registry-client.js";
 import { DeployOrchestrator } from "./lib/deploy-orchestrator.js";
 import { createDeployRoutes } from "./routes/deploy.js";
 import taskRoutes from "./routes/tasks.js";
+import infraRoutes from "./routes/infra.js";
 
 const app = new Hono();
 
@@ -375,6 +376,12 @@ app.get("/api/deploy/:id/stream", async (c) => {
 // =============================================================================
 
 app.route("/api/tasks", taskRoutes);
+
+// =============================================================================
+// INFRA ROUTES — Reconciliation & Cost Estimation
+// =============================================================================
+
+app.route("/api/infra", infraRoutes);
 
 // =============================================================================
 // DEMANDS — Legacy task entry point (kept for backward compatibility)
