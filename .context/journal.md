@@ -1,5 +1,92 @@
 # HiveMI Development Journal
 
+## 2026-02-11 — Issue #59: Bootstrap Fase 2 — Configuração via SSH
+
+### Summary
+Implemented the SSH configuration phase of the bootstrap process. After cloud-init completes and the VM is ready, the Bootstrapper connects via SSH and configures everything specific to the agent: OpenClaw runtime, role files (merged from `_base` + role-specific), the Agent Daemon as a systemd service, and post-install verification.
+
+### Done
+- **Role Loader** (`packages/bootstrapper/src/role-loader.ts`):
+  - `loadRoleConfig(agentsDir, roleName)` — reads from `agents/_base/` and `agents/<role>/`
+  - Markdown merge strategy: role file overrides `_base` entirely (SOUL.md, AGENTS.md, TOOLS.md)
+  - JSON config merge: deep merge — `_base` provides defaults, role overrides specific keys
+  - `tools.json`: role overrides `_base` entirely (each role defines its own tool set)
+  - Falls back to `_base` when role file doesn't exist, empty string when neither exists
+  - Graceful handling of invalid JSON (warns and continues)
+  - `deepMerge()` utility exported for reuse — handles nested objects, replaces arrays
+
+- **Verify Installation Phase** (`packages/bootstrapper/src/phases/configure.ts`):
+  - `verifyInstallation(ssh)` — new sub-phase after daemon install
+  - Checks `systemctl is-active hivemi-daemon` = "active"
+  - Captures `systemctl status hivemi-daemon` output for diagnostics
+  - Captures `journalctl -u hivemi-daemon -n 20` for initial logs
+  - Returns `VerifyResult` with running status, status output, and logs
+  - Throws with actionable error message if daemon is not running
+
+- **Configure Orchestration Updated**:
+  - `configure()` now runs 5 sub-phases: inject-secrets → configure-openclaw → copy-role-config → install-daemon → verify-install
+  - Each phase reports via callbacks for granular progress tracking
+  - If install-daemon fails, verify-install is skipped (no point checking)
+
+- **Fix: Config File Permissions**:
+  - Restored `mode: "600"` on OpenClaw config.yaml write (contains API token)
+  - Was accidentally removed in a previous stash — now correctly restricts read access
+
+- **Phase Tracking Updated**:
+  - `BootstrapPhaseName` type includes `"verify-install"`
+  - `createPhases()` in orchestrator includes the new phase
+  - Deploy orchestrator maps `verify-install` → `"configuring"` deploy phase
+
+- **43 new tests** (`packages/bootstrapper/src/__tests__/ssh-bootstrap.test.ts`):
+  - `deepMerge`: flat merge, nested merge, array replacement, null handling, immutability, empty objects, 3+ level nesting (7 tests)
+  - `loadRoleConfig`: SOUL.md override/fallback/empty, AGENTS.md override/fallback, TOOLS.md fallback, config.json deep merge/base-only/role-only/empty/invalid JSON, tools.json override/fallback/none, complete role load (13 tests)
+  - `verifyInstallation`: active daemon, inactive daemon, failed daemon, diagnostic output, correct commands (5 tests)
+  - `configure` orchestration: all 5 phases in order, verify-install error reporting, skipped when install fails (3 tests)
+  - `configureOpenClaw` details: workspace creation, config without auth token (2 tests)
+  - `copyRoleConfig` details: optional tools.json, skipped tools.json, empty string files (3 tests)
+  - `installDaemon` details: env vars, secrets, daemon dir path, systemd unit, daemon-reload/enable/start failures (7 tests)
+
+### Key Decisions
+- **Markdown: override, not merge** — merging markdown files is fragile and confusing. Each role defines its own SOUL.md entirely; `_base` AGENTS.md and TOOLS.md provide fallback defaults but can be overridden wholesale.
+- **JSON config: deep merge** — operational parameters like heartbeat intervals, log levels, and timeouts benefit from inheritance. The role only needs to specify what's different from `_base`.
+- **tools.json: override** — each role has a distinct tool set. Merging tool arrays could create conflicts (e.g., a QA agent shouldn't inherit a developer's shell-exec tool).
+- **Verification as a separate phase** — separating verify from install gives the deploy orchestrator granular error tracking. If install succeeds but the daemon crashes on start, the error is reported as `verify-install` failure, not `install-daemon` failure.
+- **Restore mode 600** — the config.yaml contains API tokens and should only be readable by the openclaw user. This was a regression fix.
+
+### Merge Strategy
+```
+agents/
+  _base/
+    AGENTS.md        → fallback for all roles
+    TOOLS.md         → fallback for all roles
+    config.json      → base operational params (heartbeat, telemetry, etc.)
+  developer/
+    SOUL.md          → role personality (overrides _base entirely)
+    AGENTS.md        → (optional, overrides _base entirely)
+    config.json      → role-specific params (deep-merged with _base)
+    tools.json       → role-specific tools (overrides _base entirely)
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/bootstrapper/src/role-loader.ts` | NEW — role config loader with _base + role merge |
+| `packages/bootstrapper/src/phases/configure.ts` | +verifyInstallation, +verify-install phase, fix config mode 600 |
+| `packages/bootstrapper/src/types.ts` | +verify-install in BootstrapPhaseName |
+| `packages/bootstrapper/src/index.ts` | +verify-install phase, export new modules |
+| `packages/bootstrapper/src/__tests__/ssh-bootstrap.test.ts` | NEW — 43 tests |
+| `apps/manager/src/lib/deploy-orchestrator.ts` | Map verify-install → configuring |
+
+### Commits
+- `816ab46` — feat(bootstrapper): SSH bootstrap phase 2 - role config merge, verification, and tests (#59)
+
+### Next
+- #60 (Secrets Injection) — inject secrets into daemon .env before start
+- #66 (Bootstrap Script) — the shell script that cloud-init downloads and runs
+- #44 (Provisioner) — provisions the VM before bootstrap kicks in
+
+---
+
 ## 2026-02-11 — Issue #58: Bootstrap Fase 1 — Cloud-init Template
 
 ### Summary
