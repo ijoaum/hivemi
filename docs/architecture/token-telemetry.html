@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HiveMI — Token Telemetry Architecture</title>
+<!--
+ARCHITECTURE: Token Telemetry
+STATUS: planejado
+TABLES: task_token_usage, agent_token_stats
+ENDPOINTS: POST /tasks/:id/usage, GET /agents/:id/usage, GET /usage/overview, GET /usage/daily
+PACKAGES: protocol (schemas), daemon (captura), registry (endpoints), dashboard (UI)
+ISSUES: pendente criação
+FLOW: Daemon executa task → captura usage do SSE → POST pro Registry → persiste Postgres → Dashboard consulta e exibe
+-->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ theme: 'dark', themeVariables: { primaryColor: '#f59e0b', primaryTextColor: '#fff', primaryBorderColor: '#f59e0b33', lineColor: '#555', secondaryColor: '#1e1e2e', tertiaryColor: '#111118', background: '#0a0a0f', mainBkg: '#1e1e2e', nodeBorder: '#333', clusterBkg: '#111118', clusterBorder: '#1e1e2e', titleColor: '#e0e0e0', edgeLabelBackground: '#111118' }, flowchart: { curve: 'basis', padding: 20 }, fontSize: 14 });</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  h1 {
+    text-align: center;
+    font-size: 2.2em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #f59e0b, #ef4444, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 1.1em;
+    margin-bottom: 50px;
+  }
+  .subtitle span { color: #f59e0b; }
+
+  .section {
+    margin-bottom: 60px;
+  }
+  .section-title {
+    font-size: 1.4em;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-left: 16px;
+    border-left: 3px solid #f59e0b;
+    color: #f5f5f5;
+  }
+  .section-desc {
+    color: #999;
+    margin-bottom: 24px;
+    padding-left: 19px;
+    line-height: 1.6;
+  }
+
+  /* Mermaid container */
+  .mermaid-wrapper {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 16px;
+    padding: 30px 20px;
+    overflow-x: auto;
+    margin-bottom: 24px;
+  }
+  .mermaid { text-align: center; }
+  .mermaid svg { max-width: 100%; height: auto; }
+
+  /* Data cards */
+  .data-flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .data-card {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .data-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .data-card.capture::before { background: linear-gradient(90deg, #2563eb, #8b5cf6); }
+  .data-card.store::before { background: linear-gradient(90deg, #10b981, #f59e0b); }
+  .data-card.display::before { background: linear-gradient(90deg, #ef4444, #f59e0b); }
+  .data-card.aggregate::before { background: linear-gradient(90deg, #f59e0b, #10b981); }
+  .data-card h3 {
+    font-size: 1em;
+    margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .data-card .component {
+    font-size: 0.75em;
+    color: #888;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .data-card p {
+    color: #aaa;
+    font-size: 0.88em;
+    line-height: 1.6;
+  }
+  code {
+    background: #1a1a25;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: #f59e0b;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* Schema */
+  .schema-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+  }
+  .schema-card {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .schema-header {
+    padding: 16px 20px;
+    font-weight: 600;
+    font-size: 0.95em;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #1e1e2e;
+    background: #1a1a25;
+  }
+  .schema-header.table { color: #f59e0b; }
+  .schema-header.endpoint { color: #10b981; }
+  .schema-header.zod { color: #8b5cf6; }
+  .schema-body { padding: 16px 20px; }
+  .schema-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid #1a1a25;
+    font-size: 0.85em;
+  }
+  .schema-field:last-child { border-bottom: none; }
+  .schema-field .name {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #e0e0e0;
+  }
+  .schema-field .type {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.9em;
+  }
+  .type.pk { color: #f59e0b; }
+  .type.fk { color: #8b5cf6; }
+  .type.num { color: #10b981; }
+  .type.str { color: #60a5fa; }
+  .type.json { color: #ef4444; }
+  .type.ts { color: #888; }
+
+  /* Dashboard mockup */
+  .dashboard-mockup {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .mockup-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: #0d0d14;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  .mockup-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .mockup-dot.red { background: #ef4444; }
+  .mockup-dot.yellow { background: #f59e0b; }
+  .mockup-dot.green { background: #10b981; }
+  .mockup-url { flex: 1; text-align: center; font-size: 0.75em; color: #555; }
+  .mockup-content { padding: 24px; }
+
+  .mockup-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: #0d0d14;
+    border: 1px solid #1e1e2e;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .stat-label {
+    font-size: 0.72em; color: #777;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .stat-value { font-size: 1.6em; font-weight: 700; letter-spacing: -0.5px; }
+  .stat-value.amber { color: #f59e0b; }
+  .stat-value.green { color: #10b981; }
+  .stat-value.blue { color: #60a5fa; }
+  .stat-delta { font-size: 0.72em; margin-top: 4px; }
+  .stat-delta.up { color: #ef4444; }
+  .stat-delta.down { color: #10b981; }
+
+  /* Chart */
+  .mini-chart {
+    background: #0d0d14;
+    border: 1px solid #1e1e2e;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .mini-chart-title {
+    font-size: 0.85em; font-weight: 600;
+    margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .mini-chart-title .period { font-size: 0.85em; color: #777; font-weight: 400; }
+  .chart-bars {
+    display: flex; align-items: flex-end; gap: 6px; height: 100px;
+  }
+  .chart-bar-group {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .chart-bar-stack {
+    width: 100%;
+    display: flex; flex-direction: column; gap: 1px; align-items: center;
+  }
+  .chart-bar { width: 70%; min-height: 2px; }
+  .chart-bar.input { background: #2563eb; }
+  .chart-bar.output { background: #8b5cf6; border-radius: 3px 3px 0 0; }
+  .chart-bar.cache { background: #10b981; border-radius: 0 0 3px 3px; }
+  .chart-label { font-size: 0.65em; color: #555; margin-top: 4px; }
+  .legend { display: flex; gap: 20px; margin-top: 12px; justify-content: center; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.72em; color: #777; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-dot.input { background: #2563eb; }
+  .legend-dot.output { background: #8b5cf6; }
+  .legend-dot.cache { background: #10b981; }
+
+  /* Agent table */
+  .agent-table {
+    background: #0d0d14;
+    border: 1px solid #1e1e2e;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .agent-table-title {
+    font-size: 0.85em; font-weight: 600;
+    padding: 16px 20px;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  .agent-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    padding: 12px 20px;
+    font-size: 0.82em;
+    border-bottom: 1px solid #1a1a25;
+    align-items: center;
+  }
+  .agent-row:last-child { border-bottom: none; }
+  .agent-row.header {
+    color: #666; text-transform: uppercase;
+    font-size: 0.7em; letter-spacing: 0.5px; font-weight: 600;
+  }
+  .agent-name { display: flex; align-items: center; gap: 8px; }
+  .agent-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+  .agent-dot.idle { background: #f59e0b; }
+  .agent-tokens { font-family: 'SF Mono', 'Fira Code', monospace; color: #60a5fa; }
+  .agent-cost { font-family: 'SF Mono', 'Fira Code', monospace; color: #f59e0b; }
+  .agent-tasks { color: #10b981; }
+
+  /* Steps */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+  }
+  .step {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+  }
+  .step-number {
+    position: absolute; top: -10px; left: 16px;
+    background: #f59e0b; color: #000;
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75em; font-weight: 700;
+  }
+  .step h4 { font-size: 0.9em; margin-bottom: 8px; margin-top: 4px; }
+  .step p { font-size: 0.8em; color: #888; line-height: 1.5; }
+  .step .tag {
+    display: inline-block; margin-top: 10px;
+    font-size: 0.7em; padding: 3px 8px; border-radius: 4px; font-weight: 600;
+  }
+  .tag.protocol { background: #2d1b4e; color: #8b5cf6; }
+  .tag.daemon { background: #1e2d4a; color: #60a5fa; }
+  .tag.registry { background: #1a3326; color: #10b981; }
+  .tag.dashboard { background: #3d1a24; color: #ef4444; }
+
+  .footer {
+    text-align: center; margin-top: 60px; padding-top: 20px;
+    border-top: 1px solid #1e1e2e; color: #444; font-size: 0.8em;
+  }
+
+  @media (max-width: 768px) {
+    .mockup-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>🐝 Token Telemetry Architecture</h1>
+  <p class="subtitle">HiveMI — Rastreamento de consumo de tokens por <span>task</span> e <span>agente</span></p>
+
+  <!-- ═══ MAIN FLOW ═══ -->
+  <div class="section">
+    <h2 class="section-title">Fluxo Principal</h2>
+    <p class="section-desc">Da execução de uma task até a visualização no dashboard.</p>
+
+    <div class="mermaid-wrapper">
+      <pre class="mermaid">
+flowchart LR
+    subgraph VM["🖥️ Agent VM"]
+        D["🤖 Daemon<br/><small>executa task</small>"]
+    end
+
+    subgraph API["⚡ OpenClaw"]
+        OC["Chat Completions<br/><small>stream: true</small>"]
+    end
+
+    subgraph CP["🏢 Control Plane"]
+        R["📡 Registry<br/><small>valida + persiste</small>"]
+        PG[("🗄️ Postgres<br/><small>task_token_usage<br/>agent_token_stats</small>")]
+        DASH["📊 Dashboard<br/><small>KPIs + charts</small>"]
+    end
+
+    D -->|"1. POST /chat/completions"| OC
+    OC -->|"2. SSE stream + usage"| D
+    D -->|"3. POST /tasks/:id/usage"| R
+    R -->|"4. INSERT + UPDATE"| PG
+    PG -->|"5. SELECT"| DASH
+
+    style D fill:#1e3a5f,stroke:#2563eb,color:#fff
+    style OC fill:#3b1f5e,stroke:#8b5cf6,color:#fff
+    style R fill:#1a4731,stroke:#10b981,color:#fff
+    style PG fill:#4a3000,stroke:#f59e0b,color:#fff
+    style DASH fill:#5e1a2a,stroke:#ef4444,color:#fff
+      </pre>
+    </div>
+  </div>
+
+  <!-- ═══ CAPTURE DETAIL ═══ -->
+  <div class="section">
+    <h2 class="section-title">Captura do Usage (SSE)</h2>
+    <p class="section-desc">O daemon parseia o stream SSE e extrai o usage do último chunk.</p>
+
+    <div class="mermaid-wrapper">
+      <pre class="mermaid">
+sequenceDiagram
+    participant D as 🤖 Daemon
+    participant OC as ⚡ OpenClaw API
+    participant R as 📡 Registry
+
+    D->>OC: POST /v1/chat/completions<br/>{ stream: true, messages: [...] }
+    
+    loop SSE Stream
+        OC-->>D: data: { choices: [{ delta: { content } }] }
+    end
+    
+    OC-->>D: data: { usage: { prompt_tokens, completion_tokens, total_tokens } }
+    OC-->>D: data: [DONE]
+    
+    Note over D: Parseia usage do último chunk<br/>Calcula estimatedCost
+
+    D->>R: POST /api/tasks/:id/usage<br/>{ inputTokens, outputTokens,<br/>cacheRead, model, durationMs }
+    R-->>D: 201 Created
+
+    Note over R: INSERT task_token_usage<br/>UPDATE agent_token_stats (atomic)
+      </pre>
+    </div>
+  </div>
+
+  <!-- ═══ AGGREGATION ═══ -->
+  <div class="section">
+    <h2 class="section-title">Agregação & Queries</h2>
+    <p class="section-desc">O Registry agrega automaticamente e expõe múltiplas views dos dados.</p>
+
+    <div class="mermaid-wrapper">
+      <pre class="mermaid">
+flowchart TB
+    subgraph Ingest["📥 Ingestão"]
+        POST["POST /tasks/:id/usage"]
+    end
+
+    subgraph Storage["🗄️ Persistência"]
+        TTU["task_token_usage<br/><small>por execução</small>"]
+        ATS["agent_token_stats<br/><small>acumulado por agente</small>"]
+    end
+
+    subgraph Queries["📊 Consultas"]
+        Q1["GET /tasks/:id/usage<br/><small>breakdown da task</small>"]
+        Q2["GET /agents/:id/usage<br/><small>total do agente</small>"]
+        Q3["GET /agents/:id/usage/history<br/><small>série temporal</small>"]
+        Q4["GET /usage/overview<br/><small>KPIs globais</small>"]
+        Q5["GET /usage/daily<br/><small>breakdown diário</small>"]
+    end
+
+    POST -->|INSERT| TTU
+    POST -->|"UPDATE (atomic)"| ATS
+    TTU --> Q1
+    ATS --> Q2
+    TTU --> Q3
+    TTU --> Q4
+    ATS --> Q4
+    TTU --> Q5
+
+    style POST fill:#1a4731,stroke:#10b981,color:#fff
+    style TTU fill:#4a3000,stroke:#f59e0b,color:#fff
+    style ATS fill:#4a3000,stroke:#f59e0b,color:#fff
+    style Q1 fill:#1e1e2e,stroke:#60a5fa,color:#ccc
+    style Q2 fill:#1e1e2e,stroke:#60a5fa,color:#ccc
+    style Q3 fill:#1e1e2e,stroke:#60a5fa,color:#ccc
+    style Q4 fill:#1e1e2e,stroke:#60a5fa,color:#ccc
+    style Q5 fill:#1e1e2e,stroke:#60a5fa,color:#ccc
+      </pre>
+    </div>
+  </div>
+
+  <!-- ═══ PIPELINE STEPS ═══ -->
+  <div class="section">
+    <h2 class="section-title">Etapas do Pipeline</h2>
+
+    <div class="data-flow">
+      <div class="data-card capture">
+        <h3>📥 1. Captura</h3>
+        <div class="component">Agent Daemon</div>
+        <p>
+          <code>POST /v1/chat/completions</code> com <code>stream: true</code>.
+          Último chunk SSE contém <code>usage</code> com
+          <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>.
+        </p>
+      </div>
+      <div class="data-card store">
+        <h3>📤 2. Report</h3>
+        <div class="component">Daemon → Registry</div>
+        <p>
+          <code>POST /api/tasks/:id/usage</code> com breakdown:
+          <code>inputTokens</code>, <code>outputTokens</code>,
+          <code>cacheRead</code>, <code>cacheWrite</code>, <code>model</code>,
+          <code>durationMs</code>, <code>estimatedCost</code>.
+        </p>
+      </div>
+      <div class="data-card aggregate">
+        <h3>🔄 3. Agregação</h3>
+        <div class="component">Registry</div>
+        <p>
+          INSERT em <code>task_token_usage</code> + UPDATE atômico em
+          <code>agent_token_stats</code>. Totais por agente, por modelo, por dia.
+          Cleanup: &gt;30d → daily buckets.
+        </p>
+      </div>
+      <div class="data-card display">
+        <h3>📊 4. Visualização</h3>
+        <div class="component">Dashboard</div>
+        <p>
+          KPIs (total tokens, custo, cache hit rate).
+          Barras empilhadas (input/output/cache por dia).
+          Tabela por agente. Breakdown por task.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SCHEMA ═══ -->
+  <div class="section">
+    <h2 class="section-title">Schema & Endpoints</h2>
+
+    <div class="schema-grid">
+      <div class="schema-card">
+        <div class="schema-header table">🗄️ task_token_usage</div>
+        <div class="schema-body">
+          <div class="schema-field"><span class="name">id</span><span class="type pk">uuid PK</span></div>
+          <div class="schema-field"><span class="name">taskId</span><span class="type fk">uuid FK → tasks</span></div>
+          <div class="schema-field"><span class="name">agentId</span><span class="type fk">varchar FK → agents</span></div>
+          <div class="schema-field"><span class="name">inputTokens</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">outputTokens</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">cacheReadTokens</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">cacheWriteTokens</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">totalTokens</span><span class="type num">integer (computed)</span></div>
+          <div class="schema-field"><span class="name">model</span><span class="type str">varchar</span></div>
+          <div class="schema-field"><span class="name">durationMs</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">estimatedCost</span><span class="type num">decimal(10,6)</span></div>
+          <div class="schema-field"><span class="name">createdAt</span><span class="type ts">timestamp</span></div>
+        </div>
+      </div>
+
+      <div class="schema-card">
+        <div class="schema-header table">🗄️ agent_token_stats</div>
+        <div class="schema-body">
+          <div class="schema-field"><span class="name">agentId</span><span class="type pk">varchar PK</span></div>
+          <div class="schema-field"><span class="name">totalInputTokens</span><span class="type num">bigint</span></div>
+          <div class="schema-field"><span class="name">totalOutputTokens</span><span class="type num">bigint</span></div>
+          <div class="schema-field"><span class="name">totalCacheTokens</span><span class="type num">bigint</span></div>
+          <div class="schema-field"><span class="name">totalTokens</span><span class="type num">bigint</span></div>
+          <div class="schema-field"><span class="name">totalCost</span><span class="type num">decimal(12,6)</span></div>
+          <div class="schema-field"><span class="name">taskCount</span><span class="type num">integer</span></div>
+          <div class="schema-field"><span class="name">tokensByModel</span><span class="type json">jsonb</span></div>
+          <div class="schema-field"><span class="name">lastUpdated</span><span class="type ts">timestamp</span></div>
+        </div>
+      </div>
+
+      <div class="schema-card">
+        <div class="schema-header endpoint">📡 Registry Endpoints</div>
+        <div class="schema-body">
+          <div class="schema-field"><span class="name">POST /api/tasks/:id/usage</span><span class="type str">submit</span></div>
+          <div class="schema-field"><span class="name">GET /api/tasks/:id/usage</span><span class="type str">per-task</span></div>
+          <div class="schema-field"><span class="name">GET /api/agents/:id/usage</span><span class="type str">accumulated</span></div>
+          <div class="schema-field"><span class="name">GET /api/agents/:id/usage/history</span><span class="type str">time-series</span></div>
+          <div class="schema-field"><span class="name">GET /api/usage/overview</span><span class="type str">global KPIs</span></div>
+          <div class="schema-field"><span class="name">GET /api/usage/daily</span><span class="type str">daily breakdown</span></div>
+        </div>
+      </div>
+
+      <div class="schema-card">
+        <div class="schema-header zod">🔷 Protocol Schemas (Zod)</div>
+        <div class="schema-body">
+          <div class="schema-field"><span class="name">SubmitTokenUsageSchema</span><span class="type str">POST body</span></div>
+          <div class="schema-field"><span class="name">TokenUsageResponseSchema</span><span class="type str">GET response</span></div>
+          <div class="schema-field"><span class="name">AgentTokenStatsSchema</span><span class="type str">agent totals</span></div>
+          <div class="schema-field"><span class="name">UsageOverviewSchema</span><span class="type str">global KPIs</span></div>
+          <div class="schema-field"><span class="name">DailyUsageSchema</span><span class="type str">daily breakdown</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ COST MODEL ═══ -->
+  <div class="section">
+    <h2 class="section-title">Modelo de Custo</h2>
+    <p class="section-desc">Estimativa de custo calculada no daemon com base no modelo usado.</p>
+
+    <div class="mermaid-wrapper">
+      <pre class="mermaid">
+flowchart LR
+    U["usage response<br/><small>prompt_tokens: 50k<br/>completion_tokens: 5k<br/>cached_tokens: 40k</small>"]
+    
+    P["Price Table<br/><small>opus-4.6: $15/M in, $75/M out<br/>sonnet-4: $3/M in, $15/M out<br/>cache read: 90% off</small>"]
+
+    C["Cálculo<br/><small>input: (50k-40k) × $15/M<br/>cache: 40k × $1.5/M<br/>output: 5k × $75/M</small>"]
+
+    R["estimatedCost<br/><small><b>$0.585</b></small>"]
+
+    U --> C
+    P --> C
+    C --> R
+
+    style U fill:#1e1e2e,stroke:#8b5cf6,color:#ccc
+    style P fill:#1e1e2e,stroke:#f59e0b,color:#ccc
+    style C fill:#1a4731,stroke:#10b981,color:#fff
+    style R fill:#4a3000,stroke:#f59e0b,color:#fff
+      </pre>
+    </div>
+  </div>
+
+  <!-- ═══ DASHBOARD MOCKUP ═══ -->
+  <div class="section">
+    <h2 class="section-title">Dashboard — Token Usage</h2>
+    <p class="section-desc">Mockup da página de telemetria de tokens.</p>
+
+    <div class="dashboard-mockup">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot red"></div>
+        <div class="mockup-dot yellow"></div>
+        <div class="mockup-dot green"></div>
+        <div class="mockup-url">hivemi.local:3000/usage</div>
+      </div>
+      <div class="mockup-content">
+        <div class="mockup-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Tokens (24h)</div>
+            <div class="stat-value amber">2.4M</div>
+            <div class="stat-delta up">↑ 18% vs ontem</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Custo Estimado (24h)</div>
+            <div class="stat-value green">$3.42</div>
+            <div class="stat-delta down">↓ 5% vs ontem</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Tasks Executadas</div>
+            <div class="stat-value blue">47</div>
+            <div class="stat-delta up">↑ 12 vs ontem</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Cache Hit Rate</div>
+            <div class="stat-value green">73%</div>
+            <div class="stat-delta down">↓ economizando $8.20</div>
+          </div>
+        </div>
+
+        <div class="mini-chart">
+          <div class="mini-chart-title">
+            <span>Tokens por Dia</span>
+            <span class="period">Últimos 7 dias</span>
+          </div>
+          <div class="chart-bars">
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:25px"></div><div class="chart-bar input" style="height:35px"></div><div class="chart-bar cache" style="height:15px"></div></div><div class="chart-label">Seg</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:30px"></div><div class="chart-bar input" style="height:40px"></div><div class="chart-bar cache" style="height:20px"></div></div><div class="chart-label">Ter</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:20px"></div><div class="chart-bar input" style="height:30px"></div><div class="chart-bar cache" style="height:25px"></div></div><div class="chart-label">Qua</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:45px"></div><div class="chart-bar input" style="height:50px"></div><div class="chart-bar cache" style="height:10px"></div></div><div class="chart-label">Qui</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:35px"></div><div class="chart-bar input" style="height:45px"></div><div class="chart-bar cache" style="height:30px"></div></div><div class="chart-label">Sex</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:15px"></div><div class="chart-bar input" style="height:20px"></div><div class="chart-bar cache" style="height:10px"></div></div><div class="chart-label">Sáb</div></div>
+            <div class="chart-bar-group"><div class="chart-bar-stack"><div class="chart-bar output" style="height:50px"></div><div class="chart-bar input" style="height:55px"></div><div class="chart-bar cache" style="height:35px"></div></div><div class="chart-label">Dom</div></div>
+          </div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-dot output"></div>Output</div>
+            <div class="legend-item"><div class="legend-dot input"></div>Input</div>
+            <div class="legend-item"><div class="legend-dot cache"></div>Cache</div>
+          </div>
+        </div>
+
+        <div class="agent-table">
+          <div class="agent-table-title">Consumo por Agente</div>
+          <div class="agent-row header">
+            <span>Agente</span><span>Tokens (24h)</span><span>Custo</span><span>Tasks</span><span>Modelo</span>
+          </div>
+          <div class="agent-row">
+            <span class="agent-name"><span class="agent-dot"></span>fervent-phoenix</span>
+            <span class="agent-tokens">842K</span><span class="agent-cost">$1.24</span>
+            <span class="agent-tasks">18</span><span>claude-opus-4.6</span>
+          </div>
+          <div class="agent-row">
+            <span class="agent-name"><span class="agent-dot"></span>cosmic-nebula</span>
+            <span class="agent-tokens">621K</span><span class="agent-cost">$0.89</span>
+            <span class="agent-tasks">12</span><span>claude-opus-4.6</span>
+          </div>
+          <div class="agent-row">
+            <span class="agent-name"><span class="agent-dot idle"></span>quiet-stream</span>
+            <span class="agent-tokens">534K</span><span class="agent-cost">$0.78</span>
+            <span class="agent-tasks">9</span><span>claude-sonnet-4</span>
+          </div>
+          <div class="agent-row">
+            <span class="agent-name"><span class="agent-dot"></span>blazing-comet</span>
+            <span class="agent-tokens">403K</span><span class="agent-cost">$0.51</span>
+            <span class="agent-tasks">8</span><span>claude-opus-4.6</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ IMPLEMENTATION PLAN ═══ -->
+  <div class="section">
+    <h2 class="section-title">Plano de Implementação</h2>
+    <p class="section-desc">4 issues sequenciais — cada uma buildável e testável de forma independente.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h4>Protocol + DB Migration</h4>
+        <p>Schemas Zod, migration Drizzle com as 2 tabelas, tipos TypeScript compartilhados.</p>
+        <span class="tag protocol">@hivemi/protocol</span>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <h4>Daemon — Captura & Report</h4>
+        <p>Parsear <code>usage</code> do SSE stream, enviar pro Registry junto com task completion.</p>
+        <span class="tag daemon">@hivemi/agent-daemon</span>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <h4>Registry — Endpoints</h4>
+        <p>6 endpoints REST: submit, per-task, per-agent, history, overview, daily.</p>
+        <span class="tag registry">@hivemi/registry</span>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <h4>Dashboard — Visualização</h4>
+        <p>Página /usage com KPIs, gráfico de barras, tabela por agente, breakdown por task.</p>
+        <span class="tag dashboard">@hivemi/dashboard</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DEPENDENCY GRAPH ═══ -->
+  <div class="section">
+    <h2 class="section-title">Dependências entre Issues</h2>
+
+    <div class="mermaid-wrapper">
+      <pre class="mermaid">
+flowchart LR
+    I1["#1 Protocol + DB<br/><small>schemas + migration</small>"]
+    I2["#2 Daemon<br/><small>captura + report</small>"]
+    I3["#3 Registry<br/><small>endpoints</small>"]
+    I4["#4 Dashboard<br/><small>visualização</small>"]
+
+    I1 --> I2
+    I1 --> I3
+    I2 --> I4
+    I3 --> I4
+
+    style I1 fill:#2d1b4e,stroke:#8b5cf6,color:#fff
+    style I2 fill:#1e2d4a,stroke:#60a5fa,color:#fff
+    style I3 fill:#1a3326,stroke:#10b981,color:#fff
+    style I4 fill:#3d1a24,stroke:#ef4444,color:#fff
+      </pre>
+    </div>
+  </div>
+
+  <div class="footer">
+    🐝 HiveMI Token Telemetry — Architecture Doc — Clawdia 🦞 — Feb 2026
+  </div>
+
+</div>
+</body>
+</html>
