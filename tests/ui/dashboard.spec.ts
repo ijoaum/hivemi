@@ -38,9 +38,9 @@ test.describe("NAV — Navigation & Layout", () => {
   test("NAV-04: Mobile hamburger menu", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(BASE);
-    // Sidebar should be hidden (translated off-screen)
+    // Sidebar should be hidden (translated off-screen via -translate-x-full)
     const sidebar = page.locator("aside");
-    await expect(sidebar).toHaveCSS("transform", /matrix.*-/);
+    await expect(sidebar).toHaveClass(/-translate-x-full/);
   });
 
   test("NAV-07: Theme toggle", async ({ page }) => {
@@ -48,11 +48,11 @@ test.describe("NAV — Navigation & Layout", () => {
     // Default should be dark (html has class "dark")
     const html = page.locator("html");
     await expect(html).toHaveClass(/dark/);
-    // Click theme toggle button
-    const themeBtn = page.locator("aside button:has-text('Light Mode')");
+    // In dark mode the button says "Dark Mode" — click to toggle to light
+    const themeBtn = page.locator("aside button:has-text('Dark Mode')");
     await themeBtn.click();
-    // After toggle, text changes to "Dark Mode"
-    await expect(page.locator("aside button:has-text('Dark Mode')")).toBeVisible();
+    // After toggle, text changes to "Light Mode"
+    await expect(page.locator("aside button:has-text('Light Mode')")).toBeVisible();
   });
 });
 
@@ -139,7 +139,10 @@ test.describe("DEP — Deploy Agent Modal", () => {
 
   test("DEP-12: Close modal via backdrop", async ({ page }) => {
     // Click the backdrop (the semi-transparent overlay behind the modal)
-    await page.locator(".fixed.inset-0 >> .bg-black\\/60").click({ force: true });
+    // The backdrop is .absolute.inset-0 inside .fixed.inset-0
+    // Click at the edge to avoid hitting the modal panel on top
+    const backdrop = page.locator(".fixed.inset-0 > .absolute.inset-0");
+    await backdrop.click({ position: { x: 10, y: 10 }, force: true });
     await page.waitForTimeout(500);
     await expect(page.locator("text=Deploy New Agent")).not.toBeVisible();
   });
@@ -272,9 +275,9 @@ test.describe("SET — Settings Page", () => {
   test("SET-10: LLM Providers", async ({ page }) => {
     await page.goto(`${BASE}/settings`);
     await page.click("button:has-text('LLM Providers')");
-    await expect(page.locator("text=OpenAI")).toBeVisible();
-    await expect(page.locator("text=Anthropic")).toBeVisible();
-    await expect(page.locator("text=Google")).toBeVisible();
+    await expect(page.getByText("OpenAI", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Anthropic", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Google", { exact: true }).first()).toBeVisible();
   });
 
   test("SET-12: Secrets list", async ({ page }) => {
@@ -303,8 +306,8 @@ test.describe("SET — Settings Page", () => {
   test("SET-15: Danger Zone", async ({ page }) => {
     await page.goto(`${BASE}/settings`);
     await page.click("button:has-text('Danger Zone')");
-    await expect(page.locator("text=Reset Cluster")).toBeVisible();
-    await expect(page.locator("text=Delete All Data")).toBeVisible();
+    await expect(page.locator("h3:has-text('Reset Cluster')")).toBeVisible();
+    await expect(page.locator("h3:has-text('Delete All Data')")).toBeVisible();
   });
 });
 
