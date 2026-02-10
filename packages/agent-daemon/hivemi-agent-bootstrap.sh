@@ -23,6 +23,7 @@
 #   7. Download hivemi-daemon.tar.gz from GitHub Release
 #   8. Extract to /home/openclaw/.hivemi/daemon/
 #   9. Install deps (npm install --production)
+#   9.5. Configure OpenClaw (agents, tools, gateway, plugins)
 #  10. Copy systemd unit file
 #  11. systemctl daemon-reload && systemctl enable hivemi-agent
 #  12. Does NOT start the service (Bootstrapper does that after injecting config)
@@ -243,6 +244,136 @@ install_daemon() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 9.5: Configure OpenClaw
+# ---------------------------------------------------------------------------
+
+configure_openclaw() {
+  log "Step 9.5: Configuring OpenClaw"
+
+  local config_dir="${OPENCLAW_HOME}/.openclaw"
+  local config_file="${config_dir}/openclaw.json"
+
+  # Create config directory if needed
+  mkdir -p "$config_dir"
+
+  # Generate config JSON
+  # Tokens and channel-specific settings come from environment variables
+  # set by the Bootstrapper when it injects config
+  cat > "$config_file" << 'OPENCLAW_CONFIG'
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "github-copilot/claude-opus-4.6"
+      },
+      "models": {
+        "openai-codex/gpt-5.2": {},
+        "anthropic/claude-sonnet-4-5": {
+          "alias": "sonnet"
+        },
+        "github-copilot/claude-opus-4.5": {
+          "alias": "opus45"
+        },
+        "github-copilot/claude-opus-4.6": {
+          "alias": "opus46"
+        }
+      },
+      "workspace": "/home/openclaw/.openclaw/workspace",
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "1h"
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "elevatedDefault": "full",
+      "heartbeat": {
+        "every": "1h",
+        "model": "openai-codex/gpt-5.2"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "sandbox": {
+        "mode": "off"
+      }
+    }
+  },
+  "tools": {
+    "elevated": {
+      "enabled": true,
+      "allowFrom": {
+        "webchat": ["*"],
+        "whatsapp": ["*"]
+      }
+    }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true
+  },
+  "hooks": {
+    "enabled": true
+  },
+  "discovery": {
+    "mdns": {
+      "mode": "off"
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token"
+    },
+    "trustedProxies": [
+      "127.0.0.1",
+      "::1"
+    ],
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "whatsapp": {
+        "enabled": true
+      },
+      "telegram": {
+        "enabled": true
+      },
+      "clawrouter": {
+        "enabled": true
+      },
+      "discord": {
+        "enabled": true
+      }
+    }
+  }
+}
+OPENCLAW_CONFIG
+
+  chown "$OPENCLAW_USER:$OPENCLAW_USER" "$config_file"
+  chmod 600 "$config_file"
+  log "OpenClaw config written to ${config_file}"
+  log "Note: Auth tokens and channel configs will be injected by the Bootstrapper"
+}
+
+# ---------------------------------------------------------------------------
 # Step 10-11: Systemd service setup
 # ---------------------------------------------------------------------------
 
@@ -296,6 +427,7 @@ main() {
   setup_swap
   install_packages
   install_openclaw
+  configure_openclaw
   install_daemon
   setup_systemd
   write_completion_flag
