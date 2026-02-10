@@ -1,0 +1,1722 @@
+{
+  "config": {
+    "configFile": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/playwright.config.ts",
+    "rootDir": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui",
+        "testIgnore": [],
+        "testMatch": [
+          "*.spec.ts"
+        ],
+        "timeout": 15000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dashboard.spec.ts",
+      "file": "dashboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "NAV — Navigation & Layout",
+          "file": "dashboard.spec.ts",
+          "line": 9,
+          "column": 6,
+          "specs": [
+            {
+              "title": "NAV-01: Sidebar renders correctly",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1569,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:01.619Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-ffd14b6cde4aa1626143",
+              "file": "dashboard.spec.ts",
+              "line": 10,
+              "column": 3
+            },
+            {
+              "title": "NAV-02: Navigation between pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2816,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:03.338Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-0472720d36b1d08cd008",
+              "file": "dashboard.spec.ts",
+              "line": 22,
+              "column": 3
+            },
+            {
+              "title": "NAV-04: Mobile hamburger menu",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 10840,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCSS\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('aside')\nExpected pattern: \u001b[32m/matrix.*-/\u001b[39m\nReceived string:  \u001b[31m\"none\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCSS\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('aside')\u001b[22m\n\u001b[2m    14 × locator resolved to <aside class=\"bg-gray-900 text-white min-h-screen p-4 flex flex-col z-50 fixed inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out -translate-x-full md:static md:translate-x-0\">…</aside>\u001b[22m\n\u001b[2m       - unexpected value \"none\"\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCSS\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('aside')\nExpected pattern: \u001b[32m/matrix.*-/\u001b[39m\nReceived string:  \u001b[31m\"none\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCSS\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('aside')\u001b[22m\n\u001b[2m    14 × locator resolved to <aside class=\"bg-gray-900 text-white min-h-screen p-4 flex flex-col z-50 fixed inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out -translate-x-full md:static md:translate-x-0\">…</aside>\u001b[22m\n\u001b[2m       - unexpected value \"none\"\u001b[22m\n\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:43:27",
+                        "location": {
+                          "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                          "column": 27,
+                          "line": 43
+                        },
+                        "snippet": "  41 |     // Sidebar should be hidden (translated off-screen)\n  42 |     const sidebar = page.locator(\"aside\");\n> 43 |     await expect(sidebar).toHaveCSS(\"transform\", /matrix.*-/);\n     |                           ^\n  44 |   });\n  45 |\n  46 |   test(\"NAV-07: Theme toggle\", async ({ page }) => {"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                            "column": 27,
+                            "line": 43
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCSS\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('aside')\nExpected pattern: \u001b[32m/matrix.*-/\u001b[39m\nReceived string:  \u001b[31m\"none\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCSS\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('aside')\u001b[22m\n\u001b[2m    14 × locator resolved to <aside class=\"bg-gray-900 text-white min-h-screen p-4 flex flex-col z-50 fixed inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out -translate-x-full md:static md:translate-x-0\">…</aside>\u001b[22m\n\u001b[2m       - unexpected value \"none\"\u001b[22m\n\n\n  41 |     // Sidebar should be hidden (translated off-screen)\n  42 |     const sidebar = page.locator(\"aside\");\n> 43 |     await expect(sidebar).toHaveCSS(\"transform\", /matrix.*-/);\n     |                           ^\n  44 |   });\n  45 |\n  46 |   test(\"NAV-07: Theme toggle\", async ({ page }) => {\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:43:27"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:06.185Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-NAV-—-Navigation-facbe-AV-04-Mobile-hamburger-menu-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-NAV-—-Navigation-facbe-AV-04-Mobile-hamburger-menu-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                        "column": 27,
+                        "line": 43
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-1ba418571dbbb9b593cf",
+              "file": "dashboard.spec.ts",
+              "line": 38,
+              "column": 3
+            },
+            {
+              "title": "NAV-07: Theme toggle",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "timedOut",
+                      "duration": 15211,
+                      "error": {
+                        "message": "\u001b[31mTest timeout of 15000ms exceeded.\u001b[39m",
+                        "stack": "\u001b[31mTest timeout of 15000ms exceeded.\u001b[39m"
+                      },
+                      "errors": [
+                        {
+                          "message": "\u001b[31mTest timeout of 15000ms exceeded.\u001b[39m"
+                        },
+                        {
+                          "location": {
+                            "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                            "column": 20,
+                            "line": 53
+                          },
+                          "message": "Error: locator.click: Test timeout of 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('aside button:has-text(\\'Light Mode\\')')\u001b[22m\n\u001b[2m    - locator resolved to <button class=\"flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m  - element was detached from the DOM, retrying\u001b[22m\n\n\n  51 |     // Click theme toggle button\n  52 |     const themeBtn = page.locator(\"aside button:has-text('Light Mode')\");\n> 53 |     await themeBtn.click();\n     |                    ^\n  54 |     // After toggle, text changes to \"Dark Mode\"\n  55 |     await expect(page.locator(\"aside button:has-text('Dark Mode')\")).toBeVisible();\n  56 |   });\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:53:20"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:18.769Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-NAV-—-Navigation-Layout-NAV-07-Theme-toggle-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-NAV-—-Navigation-Layout-NAV-07-Theme-toggle-chromium/error-context.md"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-855f92f37acf9739ba92",
+              "file": "dashboard.spec.ts",
+              "line": 46,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "AGT — Agents Home Page",
+          "file": "dashboard.spec.ts",
+          "line": 63,
+          "column": 6,
+          "specs": [
+            {
+              "title": "AGT-01: Page loads with content",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1518,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:36.083Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-97da23997c119e8f3748",
+              "file": "dashboard.spec.ts",
+              "line": 64,
+              "column": 3
+            },
+            {
+              "title": "AGT-06: Quick Stats grid",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2950,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:37.799Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-4accceb43236c3b0c72a",
+              "file": "dashboard.spec.ts",
+              "line": 72,
+              "column": 3
+            },
+            {
+              "title": "AGT-14: Deploy button opens modal",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1811,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:40.767Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-84ebe259b0cc2b41b72c",
+              "file": "dashboard.spec.ts",
+              "line": 80,
+              "column": 3
+            },
+            {
+              "title": "AGT-16: Auto-refresh updates data",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7023,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:42.627Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-9e50f165e311ec251755",
+              "file": "dashboard.spec.ts",
+              "line": 86,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "DEP — Deploy Agent Modal",
+          "file": "dashboard.spec.ts",
+          "line": 98,
+          "column": 6,
+          "specs": [
+            {
+              "title": "DEP-02: Random name is generated",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1652,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:49.685Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-f8cb995f238faae37779",
+              "file": "dashboard.spec.ts",
+              "line": 105,
+              "column": 3
+            },
+            {
+              "title": "DEP-03: Dice generates new name",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1998,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:51.413Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-b3630ce27e3b7b74f60b",
+              "file": "dashboard.spec.ts",
+              "line": 111,
+              "column": 3
+            },
+            {
+              "title": "DEP-07: Model selection grid",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1766,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:53.451Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-e78755b8e0dfab7fcb04",
+              "file": "dashboard.spec.ts",
+              "line": 121,
+              "column": 3
+            },
+            {
+              "title": "DEP-08: Auto-start toggle",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1807,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:55.245Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-a57a1fc16ce06802540a",
+              "file": "dashboard.spec.ts",
+              "line": 128,
+              "column": 3
+            },
+            {
+              "title": "DEP-11: Validation - empty name disables button",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2032,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:57.081Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-c3d5bb662897d5a77940",
+              "file": "dashboard.spec.ts",
+              "line": 133,
+              "column": 3
+            },
+            {
+              "title": "DEP-12: Close modal via backdrop",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 12370,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).not.\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('text=Deploy New Agent')\nExpected: not visible\nReceived: visible\nTimeout:  10000ms\n\nCall log:\n\u001b[2m  - Expect \"not toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Deploy New Agent')\u001b[22m\n\u001b[2m    14 × locator resolved to <h2 class=\"text-xl font-semibold text-white\">Deploy New Agent</h2>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).not.\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('text=Deploy New Agent')\nExpected: not visible\nReceived: visible\nTimeout:  10000ms\n\nCall log:\n\u001b[2m  - Expect \"not toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Deploy New Agent')\u001b[22m\n\u001b[2m    14 × locator resolved to <h2 class=\"text-xl font-semibold text-white\">Deploy New Agent</h2>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:144:61",
+                        "location": {
+                          "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                          "column": 61,
+                          "line": 144
+                        },
+                        "snippet": "  142 |     await page.locator(\".fixed.inset-0 >> .bg-black\\\\/60\").click({ force: true });\n  143 |     await page.waitForTimeout(500);\n> 144 |     await expect(page.locator(\"text=Deploy New Agent\")).not.toBeVisible();\n      |                                                             ^\n  145 |   });\n  146 | });\n  147 |"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                            "column": 61,
+                            "line": 144
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).not.\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('text=Deploy New Agent')\nExpected: not visible\nReceived: visible\nTimeout:  10000ms\n\nCall log:\n\u001b[2m  - Expect \"not toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Deploy New Agent')\u001b[22m\n\u001b[2m    14 × locator resolved to <h2 class=\"text-xl font-semibold text-white\">Deploy New Agent</h2>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n\n\n  142 |     await page.locator(\".fixed.inset-0 >> .bg-black\\\\/60\").click({ force: true });\n  143 |     await page.waitForTimeout(500);\n> 144 |     await expect(page.locator(\"text=Deploy New Agent\")).not.toBeVisible();\n      |                                                             ^\n  145 |   });\n  146 | });\n  147 |\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:144:61"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:15:59.148Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-DEP-—-Deploy-Age-dc4d5-12-Close-modal-via-backdrop-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-DEP-—-Deploy-Age-dc4d5-12-Close-modal-via-backdrop-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                        "column": 61,
+                        "line": 144
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-d614e3c9d6883ae10a93",
+              "file": "dashboard.spec.ts",
+              "line": 140,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "TSK — Tasks Page",
+          "file": "dashboard.spec.ts",
+          "line": 152,
+          "column": 6,
+          "specs": [
+            {
+              "title": "TSK-01: Stats cards render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2925,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:13.243Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-6e38f6bbce6b8e8cd1e5",
+              "file": "dashboard.spec.ts",
+              "line": 153,
+              "column": 3
+            },
+            {
+              "title": "TSK-06: No results message",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 950,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:16.340Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-9aceeb71eb7f6316778e",
+              "file": "dashboard.spec.ts",
+              "line": 161,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "TMS — Teams Page",
+          "file": "dashboard.spec.ts",
+          "line": 176,
+          "column": 6,
+          "specs": [
+            {
+              "title": "TMS-01: Stats render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2897,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:17.324Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-6f2267ac9c6f5d768d86",
+              "file": "dashboard.spec.ts",
+              "line": 177,
+              "column": 3
+            },
+            {
+              "title": "TMS-03: New Team button opens modal",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1342,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:20.250Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-2b2dcfe1b73036d4dd84",
+              "file": "dashboard.spec.ts",
+              "line": 185,
+              "column": 3
+            },
+            {
+              "title": "TMS-03b: Team modal has required fields",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1404,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:21.611Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-fa4cd985aaa822d1bce9",
+              "file": "dashboard.spec.ts",
+              "line": 191,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "ROL — Roles Page",
+          "file": "dashboard.spec.ts",
+          "line": 204,
+          "column": 6,
+          "specs": [
+            {
+              "title": "ROL-01: Stats render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2869,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:23.034Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-554777dfc28f4da32dce",
+              "file": "dashboard.spec.ts",
+              "line": 205,
+              "column": 3
+            },
+            {
+              "title": "ROL-03: New Role button opens modal",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1375,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:25.924Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-6a4ec3b6b68333407816",
+              "file": "dashboard.spec.ts",
+              "line": 213,
+              "column": 3
+            },
+            {
+              "title": "ROL-03b: Role modal has all fields",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1411,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:27.316Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-91b46d74ef6fb883ee30",
+              "file": "dashboard.spec.ts",
+              "line": 219,
+              "column": 3
+            },
+            {
+              "title": "ROL-04: Auto-slug generation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1611,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:28.744Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-74ec3c5b6b43d2e6baf1",
+              "file": "dashboard.spec.ts",
+              "line": 227,
+              "column": 3
+            },
+            {
+              "title": "ROL-08: Validation - required fields",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1439,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:30.371Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-04dbdb19bd1904e9c3b5",
+              "file": "dashboard.spec.ts",
+              "line": 237,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "SET — Settings Page",
+          "file": "dashboard.spec.ts",
+          "line": 249,
+          "column": 6,
+          "specs": [
+            {
+              "title": "SET-01: Section navigation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1014,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:31.829Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-c7e5de2ef6d4a676f2e0",
+              "file": "dashboard.spec.ts",
+              "line": 250,
+              "column": 3
+            },
+            {
+              "title": "SET-03: General - Cluster name input",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 913,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:32.865Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-898c4b835f869be9c509",
+              "file": "dashboard.spec.ts",
+              "line": 257,
+              "column": 3
+            },
+            {
+              "title": "SET-09: Agents settings",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1228,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:33.794Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-229372ef6f09f5183fba",
+              "file": "dashboard.spec.ts",
+              "line": 265,
+              "column": 3
+            },
+            {
+              "title": "SET-10: LLM Providers",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 1304,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=OpenAI')\nExpected: visible\nError: strict mode violation: locator('text=OpenAI') resolved to 2 elements:\n    1) <option value=\"openai\">OpenAI (gpt-4o)</option> aka getByRole('combobox')\n    2) <p class=\"text-sm md:text-base text-white font-medium\">OpenAI</p> aka getByText('OpenAI', { exact: true })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=OpenAI')\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=OpenAI')\nExpected: visible\nError: strict mode violation: locator('text=OpenAI') resolved to 2 elements:\n    1) <option value=\"openai\">OpenAI (gpt-4o)</option> aka getByRole('combobox')\n    2) <p class=\"text-sm md:text-base text-white font-medium\">OpenAI</p> aka getByText('OpenAI', { exact: true })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=OpenAI')\u001b[22m\n\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:275:47",
+                        "location": {
+                          "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                          "column": 47,
+                          "line": 275
+                        },
+                        "snippet": "  273 |     await page.goto(`${BASE}/settings`);\n  274 |     await page.click(\"button:has-text('LLM Providers')\");\n> 275 |     await expect(page.locator(\"text=OpenAI\")).toBeVisible();\n      |                                               ^\n  276 |     await expect(page.locator(\"text=Anthropic\")).toBeVisible();\n  277 |     await expect(page.locator(\"text=Google\")).toBeVisible();\n  278 |   });"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                            "column": 47,
+                            "line": 275
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=OpenAI')\nExpected: visible\nError: strict mode violation: locator('text=OpenAI') resolved to 2 elements:\n    1) <option value=\"openai\">OpenAI (gpt-4o)</option> aka getByRole('combobox')\n    2) <p class=\"text-sm md:text-base text-white font-medium\">OpenAI</p> aka getByText('OpenAI', { exact: true })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=OpenAI')\u001b[22m\n\n\n  273 |     await page.goto(`${BASE}/settings`);\n  274 |     await page.click(\"button:has-text('LLM Providers')\");\n> 275 |     await expect(page.locator(\"text=OpenAI\")).toBeVisible();\n      |                                               ^\n  276 |     await expect(page.locator(\"text=Anthropic\")).toBeVisible();\n  277 |     await expect(page.locator(\"text=Google\")).toBeVisible();\n  278 |   });\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:275:47"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:35.044Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-SET-—-Settings-Page-SET-10-LLM-Providers-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-SET-—-Settings-Page-SET-10-LLM-Providers-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                        "column": 47,
+                        "line": 275
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-da0ca242c06aac6f4894",
+              "file": "dashboard.spec.ts",
+              "line": 272,
+              "column": 3
+            },
+            {
+              "title": "SET-12: Secrets list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1385,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:38.069Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-3442c665185bc6a2f242",
+              "file": "dashboard.spec.ts",
+              "line": 280,
+              "column": 3
+            },
+            {
+              "title": "SET-13: 1Password integration",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1224,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:39.652Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-65cca3ae76c88c226cda",
+              "file": "dashboard.spec.ts",
+              "line": 288,
+              "column": 3
+            },
+            {
+              "title": "SET-14: Notifications toggles",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1157,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:40.902Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-7e722c30288ab36b56c4",
+              "file": "dashboard.spec.ts",
+              "line": 295,
+              "column": 3
+            },
+            {
+              "title": "SET-15: Danger Zone",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 1197,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=Reset Cluster')\nExpected: visible\nError: strict mode violation: locator('text=Reset Cluster') resolved to 2 elements:\n    1) <h3 class=\"text-base md:text-lg font-medium text-white mb-1\">Reset Cluster</h3> aka getByRole('heading', { name: 'Reset Cluster' })\n    2) <button class=\"px-3 md:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm md:text-base\">Reset Cluster</button> aka getByRole('button', { name: 'Reset Cluster' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Reset Cluster')\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=Reset Cluster')\nExpected: visible\nError: strict mode violation: locator('text=Reset Cluster') resolved to 2 elements:\n    1) <h3 class=\"text-base md:text-lg font-medium text-white mb-1\">Reset Cluster</h3> aka getByRole('heading', { name: 'Reset Cluster' })\n    2) <button class=\"px-3 md:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm md:text-base\">Reset Cluster</button> aka getByRole('button', { name: 'Reset Cluster' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Reset Cluster')\u001b[22m\n\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:306:54",
+                        "location": {
+                          "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                          "column": 54,
+                          "line": 306
+                        },
+                        "snippet": "  304 |     await page.goto(`${BASE}/settings`);\n  305 |     await page.click(\"button:has-text('Danger Zone')\");\n> 306 |     await expect(page.locator(\"text=Reset Cluster\")).toBeVisible();\n      |                                                      ^\n  307 |     await expect(page.locator(\"text=Delete All Data\")).toBeVisible();\n  308 |   });\n  309 | });"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                            "column": 54,
+                            "line": 306
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('text=Reset Cluster')\nExpected: visible\nError: strict mode violation: locator('text=Reset Cluster') resolved to 2 elements:\n    1) <h3 class=\"text-base md:text-lg font-medium text-white mb-1\">Reset Cluster</h3> aka getByRole('heading', { name: 'Reset Cluster' })\n    2) <button class=\"px-3 md:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm md:text-base\">Reset Cluster</button> aka getByRole('button', { name: 'Reset Cluster' })\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('text=Reset Cluster')\u001b[22m\n\n\n  304 |     await page.goto(`${BASE}/settings`);\n  305 |     await page.click(\"button:has-text('Danger Zone')\");\n> 306 |     await expect(page.locator(\"text=Reset Cluster\")).toBeVisible();\n      |                                                      ^\n  307 |     await expect(page.locator(\"text=Delete All Data\")).toBeVisible();\n  308 |   });\n  309 | });\n    at /home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts:306:54"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:42.078Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-SET-—-Settings-Page-SET-15-Danger-Zone-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/home/openclaw/.openclaw/workspace/hivemi/tests/test-results/dashboard-SET-—-Settings-Page-SET-15-Danger-Zone-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/home/openclaw/.openclaw/workspace/hivemi/tests/ui/dashboard.spec.ts",
+                        "column": 54,
+                        "line": 306
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-ba1f77884ae2cde01185",
+              "file": "dashboard.spec.ts",
+              "line": 303,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "LOG — Logs Page",
+          "file": "dashboard.spec.ts",
+          "line": 315,
+          "column": 6,
+          "specs": [
+            {
+              "title": "LOG-01: Stats cards render",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2952,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:44.916Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-3a01c8ed72b1f5335f5b",
+              "file": "dashboard.spec.ts",
+              "line": 316,
+              "column": 3
+            },
+            {
+              "title": "LOG-03: Search field exists",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1214,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:48.010Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-32f8bf1a34e154822d49",
+              "file": "dashboard.spec.ts",
+              "line": 324,
+              "column": 3
+            },
+            {
+              "title": "LOG-09: Export button",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 972,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:49.244Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-0794802d77f39f2b35e2",
+              "file": "dashboard.spec.ts",
+              "line": 330,
+              "column": 3
+            },
+            {
+              "title": "LOG-10: Live button",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 944,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:50.245Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-045370fc36fb47bf977e",
+              "file": "dashboard.spec.ts",
+              "line": 335,
+              "column": 3
+            },
+            {
+              "title": "LOG-11: Footer counts",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3237,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:51.225Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-4eafea225081dab9a8b0",
+              "file": "dashboard.spec.ts",
+              "line": 340,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "THM/RES — Theme & Responsiveness",
+          "file": "dashboard.spec.ts",
+          "line": 354,
+          "column": 6,
+          "specs": [
+            {
+              "title": "THM-01: Dark mode default",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 880,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:54.483Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-fd31864ba2f8811d87b9",
+              "file": "dashboard.spec.ts",
+              "line": 355,
+              "column": 3
+            },
+            {
+              "title": "RES-01: Mobile 375px - no horizontal overflow",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2784,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:55.390Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-623341dc539e2eadc170",
+              "file": "dashboard.spec.ts",
+              "line": 361,
+              "column": 3
+            },
+            {
+              "title": "RES-02: Tablet 768px",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2981,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:16:58.190Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-7ddba4a6b1f70875c8e4",
+              "file": "dashboard.spec.ts",
+              "line": 369,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "ERR — Error Handling",
+          "file": "dashboard.spec.ts",
+          "line": 383,
+          "column": 6,
+          "specs": [
+            {
+              "title": "ERR-10: Deep link to agent detail",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 15000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4593,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-02-10T02:17:01.208Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-bcdda2725465bdae9e94",
+              "file": "dashboard.spec.ts",
+              "line": 384,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-02-10T02:14:59.745Z",
+    "duration": 126179.558,
+    "expected": 36,
+    "skipped": 0,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}
