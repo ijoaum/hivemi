@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HiveMI — System Architecture Overview</title>
+<!--
+ARCHITECTURE: System Overview
+VERSION: 0.1.0
+STACK: pnpm monorepo, TypeScript, Next.js 16, Hono, Drizzle, Postgres, Playwright
+APPS: dashboard (Next.js, :3000), manager (Hono, :4000), registry (Hono, :4001)
+PACKAGES: agent-daemon, agent-runtime, bootstrapper, cli, llm, protocol, provisioner
+DB_TABLES: agents, roles, teams, tasks, logs, deploys, agent_telemetry, settings, task_progress
+DEPLOY_FLOW: Dashboard → Manager → Provisioner (cloud VM) → Bootstrapper (SSH) → Daemon registers → Registry
+TASK_FLOW: Dashboard → Manager/demands → Registry/tasks → Daemon polls → OpenClaw executes → Daemon completes
+-->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ theme: 'dark', themeVariables: { primaryColor: '#f59e0b', primaryTextColor: '#fff', primaryBorderColor: '#f59e0b33', lineColor: '#555', secondaryColor: '#1e1e2e', tertiaryColor: '#111118', background: '#0a0a0f', mainBkg: '#1e1e2e', nodeBorder: '#333', clusterBkg: '#111118', clusterBorder: '#1e1e2e', titleColor: '#e0e0e0', edgeLabelBackground: '#111118' }, flowchart: { curve: 'basis', padding: 20 }, fontSize: 14 });</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  h1 {
+    text-align: center;
+    font-size: 2.4em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #f59e0b, #ef4444, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 1.1em;
+    margin-bottom: 50px;
+  }
+  .subtitle span { color: #f59e0b; }
+
+  .section { margin-bottom: 60px; }
+  .section-title {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: #f59e0b;
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f59e0b33;
+  }
+  .section-title .emoji { margin-right: 8px; }
+
+  .card {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #333; }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3em;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: #fff;
+  }
+  .card-subtitle {
+    font-size: 0.85em;
+    color: #888;
+    font-family: 'Fira Code', monospace;
+  }
+  .card-body { color: #aaa; font-size: 0.95em; line-height: 1.6; }
+  .card-body p { margin-bottom: 8px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .badge-amber { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b33; }
+  .badge-green { background: #10b98122; color: #10b981; border: 1px solid #10b98133; }
+  .badge-blue { background: #3b82f622; color: #3b82f6; border: 1px solid #3b82f633; }
+  .badge-purple { background: #8b5cf622; color: #8b5cf6; border: 1px solid #8b5cf633; }
+  .badge-red { background: #ef444422; color: #ef4444; border: 1px solid #ef444433; }
+  .badge-gray { background: #6b728022; color: #9ca3af; border: 1px solid #6b728033; }
+  .badge-cyan { background: #06b6d422; color: #06b6d4; border: 1px solid #06b6d433; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 768px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    h1 { font-size: 1.8em; }
+  }
+
+  .mermaid-container {
+    background: #0d0d14;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 30px 20px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin: 16px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  th {
+    color: #f59e0b;
+    font-weight: 600;
+    background: #111118;
+    position: sticky;
+    top: 0;
+  }
+  td { color: #ccc; }
+  tr:hover td { background: #111118; }
+  td code {
+    background: #1e1e2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.9em;
+    color: #f59e0b;
+  }
+
+  .file-tree {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85em;
+    color: #888;
+    line-height: 1.8;
+    background: #0d0d14;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .file-tree .dir { color: #f59e0b; font-weight: 600; }
+  .file-tree .file { color: #aaa; }
+  .file-tree .comment { color: #555; font-style: italic; }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat-card {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 1.8em;
+    font-weight: 700;
+    color: #fff;
+  }
+  .stat-label {
+    font-size: 0.8em;
+    color: #888;
+    margin-top: 4px;
+  }
+
+  .endpoint-list {
+    list-style: none;
+    padding: 0;
+  }
+  .endpoint-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid #1e1e2e;
+    font-size: 0.9em;
+  }
+  .endpoint-list li:last-child { border-bottom: none; }
+  .method {
+    display: inline-block;
+    width: 55px;
+    text-align: center;
+    padding: 2px 0;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    margin-right: 8px;
+  }
+  .method-get { background: #10b98122; color: #10b981; }
+  .method-post { background: #3b82f622; color: #3b82f6; }
+  .method-put { background: #f59e0b22; color: #f59e0b; }
+  .method-delete { background: #ef444422; color: #ef4444; }
+  .endpoint-path {
+    font-family: 'Fira Code', monospace;
+    color: #ccc;
+  }
+  .endpoint-desc {
+    color: #666;
+    margin-left: 70px;
+    font-size: 0.85em;
+  }
+
+  .toc {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 40px;
+  }
+  .toc h3 { color: #f59e0b; margin-bottom: 12px; }
+  .toc ol { padding-left: 24px; }
+  .toc li { padding: 4px 0; }
+  .toc a { color: #aaa; text-decoration: none; transition: color 0.2s; }
+  .toc a:hover { color: #f59e0b; }
+
+  .dep-arrow { color: #555; margin: 0 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🐝 HiveMI — System Architecture</h1>
+<p class="subtitle">Hive Mesh Intelligence — AI Agent Orchestration Platform <span>v0.1.0</span></p>
+
+<!-- Stats -->
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-number" style="color: #f59e0b">3</div>
+    <div class="stat-label">Apps</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #8b5cf6">7</div>
+    <div class="stat-label">Packages</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #3b82f6">9</div>
+    <div class="stat-label">DB Tables</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #10b981">40+</div>
+    <div class="stat-label">API Endpoints</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #ef4444">100</div>
+    <div class="stat-label">UI Tests</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #06b6d4">~15k</div>
+    <div class="stat-label">Lines of Code</div>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <h3>📑 Índice</h3>
+  <ol>
+    <li><a href="#overview">Visão Geral do Sistema</a></li>
+    <li><a href="#apps">Apps (Serviços Runtime)</a></li>
+    <li><a href="#packages">Packages (Bibliotecas Compartilhadas)</a></li>
+    <li><a href="#database">Banco de Dados</a></li>
+    <li><a href="#api">API Endpoints</a></li>
+    <li><a href="#deploy-flow">Fluxo de Deploy</a></li>
+    <li><a href="#task-flow">Fluxo de Tasks</a></li>
+    <li><a href="#p2p">Comunicação P2P</a></li>
+    <li><a href="#telemetry">Telemetria & Monitoramento</a></li>
+    <li><a href="#dashboard">Dashboard (Frontend)</a></li>
+    <li><a href="#file-structure">Estrutura de Arquivos</a></li>
+    <li><a href="#tech-stack">Stack Tecnológica</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================== -->
+<!-- 1. SYSTEM OVERVIEW -->
+<!-- ================================================================== -->
+<div class="section" id="overview">
+  <div class="section-title"><span class="emoji">🏗️</span> 1. Visão Geral do Sistema</div>
+
+  <div class="card">
+    <div class="card-body">
+      <p>HiveMI é uma plataforma de orquestração de agentes AI. Cada agente roda em uma VM isolada na nuvem com sua própria instância do OpenClaw. O sistema central (control plane) gerencia o ciclo de vida dos agentes, distribui tarefas e coleta métricas.</p>
+    </div>
+  </div>
+
+  <div class="mermaid-container">
+    <pre class="mermaid">
+    graph TB
+      subgraph CP["☁️ Control Plane"]
+        D["🖥️ Dashboard<br/><small>Next.js :3000</small>"]
+        M["⚙️ Manager<br/><small>Hono :4000</small>"]
+        R["📋 Registry<br/><small>Hono :4001</small>"]
+        PG[("🐘 Postgres")]
+      end
+
+      subgraph CLOUD["☁️ Cloud VMs (DigitalOcean/GCP)"]
+        VM1["🤖 Agent VM 1<br/><small>OpenClaw + Daemon</small>"]
+        VM2["🤖 Agent VM 2<br/><small>OpenClaw + Daemon</small>"]
+        VM3["🤖 Agent VM 3<br/><small>OpenClaw + Daemon</small>"]
+      end
+
+      U["👤 Usuário"] --> D
+      D -- "proxy" --> R
+      D -- "proxy" --> M
+      M -- "CRUD" --> R
+      R -- "Drizzle ORM" --> PG
+      M -. "Provisioner" .-> CLOUD
+      VM1 -- "heartbeat / tasks / logs" --> R
+      VM2 -- "heartbeat / tasks / logs" --> R
+      VM3 -- "heartbeat / tasks / logs" --> R
+      VM1 <-. "P2P" .-> VM2
+    </pre>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 2. APPS -->
+<!-- ================================================================== -->
+<div class="section" id="apps">
+  <div class="section-title"><span class="emoji">📦</span> 2. Apps (Serviços Runtime)</div>
+
+  <!-- Dashboard -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background: #3b82f622; color: #3b82f6;">🖥️</div>
+      <div>
+        <div class="card-title">Dashboard</div>
+        <div class="card-subtitle">apps/dashboard · Next.js 16 · :3000</div>
+      </div>
+      <span class="badge badge-blue">Frontend + API Proxy</span>
+    </div>
+    <div class="card-body">
+      <p>Interface web do HiveMI. React 19 + Tailwind 4 + Lucide icons. Server-side API routes fazem proxy transparente para Registry (:4001) e Manager (:4000).</p>
+      <p><strong>Páginas:</strong> Home (agents), Agent Detail, Tasks, Teams, Roles, Settings (7 seções), Logs</p>
+      <p><strong>Modais:</strong> Deploy Agent, Create/Edit Role, Create/Edit Team, Create Task, Task Detail, Confirm Dialog</p>
+      <p><strong>16 componentes</strong> · <strong>7 páginas</strong> · <strong>35+ API routes</strong> (proxy)</p>
+    </div>
+  </div>
+
+  <!-- Manager -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background: #f59e0b22; color: #f59e0b;">⚙️</div>
+      <div>
+        <div class="card-title">Manager</div>
+        <div class="card-subtitle">apps/manager · Hono · :4000</div>
+      </div>
+      <span class="badge badge-amber">Orchestrator</span>
+    </div>
+    <div class="card-body">
+      <p>Orquestrador central. Coordena deploys (5 fases), gerencia demandas (task assignment), infra (reconciliation, costs) e status geral do cluster.</p>
+      <p><strong>Deploy Orchestrator:</strong> Provisioner → Cloud-init → SSH Bootstrap → Configure → Register (~917 linhas, maior arquivo do projeto)</p>
+      <p><strong>Dependências:</strong> <code>@hivemi/protocol</code>, <code>@hivemi/provisioner</code>, <code>@hivemi/bootstrapper</code></p>
+    </div>
+  </div>
+
+  <!-- Registry -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background: #10b98122; color: #10b981;">📋</div>
+      <div>
+        <div class="card-title">Registry</div>
+        <div class="card-subtitle">apps/registry · Hono · :4001</div>
+      </div>
+      <span class="badge badge-green">Source of Truth</span>
+    </div>
+    <div class="card-body">
+      <p>Banco de dados central e API CRUD. Todas as entidades passam por aqui. Postgres via Drizzle ORM. Auth via Bearer token (HIVEMI_SECRET).</p>
+      <p><strong>Rotas:</strong> agents (register/upsert), roles, teams, tasks (queue + CRUD), logs (batch), deploys, heartbeat, telemetry, discovery, cloud settings</p>
+      <p><strong>Background jobs:</strong> offline detection (agents sem heartbeat), lock timeout (tasks travadas)</p>
+      <p><strong>9 tabelas</strong> · <strong>8 route files</strong> · <strong>Seed data</strong> (4 roles + 2 teams + 4 agents)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 3. PACKAGES -->
+<!-- ================================================================== -->
+<div class="section" id="packages">
+  <div class="section-title"><span class="emoji">📚</span> 3. Packages (Bibliotecas Compartilhadas)</div>
+
+  <div class="grid-2">
+    <!-- Protocol -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #8b5cf622; color: #8b5cf6;">📐</div>
+        <div>
+          <div class="card-title">protocol</div>
+          <div class="card-subtitle">@hivemi/protocol · 884 LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Contratos compartilhados do sistema. Schemas Zod para todas as entidades, middleware de auth, config types.</p>
+        <p><strong>Schemas:</strong> Agent, Role, Team, Task, Log, Deploy, Telemetry, Heartbeat, P2P Messages</p>
+        <p><strong>Usado por:</strong> todos os outros packages e apps</p>
+      </div>
+    </div>
+
+    <!-- Agent Daemon -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #ef444422; color: #ef4444;">🤖</div>
+        <div>
+          <div class="card-title">agent-daemon</div>
+          <div class="card-subtitle">@hivemi/agent-daemon · ~3k LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Daemon que roda em cada VM agent. Faz polling de tasks, executa via OpenClaw, reporta resultados, envia heartbeats e telemetria.</p>
+        <p><strong>Módulos:</strong> task-poller, task-executor, openclaw-client, registry-client, p2p-client, p2p-handler, telemetry, output-parser</p>
+      </div>
+    </div>
+
+    <!-- Provisioner -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #06b6d422; color: #06b6d4;">☁️</div>
+        <div>
+          <div class="card-title">provisioner</div>
+          <div class="card-subtitle">@hivemi/provisioner · ~1.8k LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Abstração de cloud providers. Cria/destrói VMs, gerencia SSH keys, firewalls, reconciliation de infra, estimativa de custos.</p>
+        <p><strong>Providers:</strong> DigitalOcean (586 LOC, completo), GCP (82 LOC, stub)</p>
+        <p><strong>Features:</strong> reconciliation (orphaned VMs, phantom agents, IP mismatch), cost estimation</p>
+      </div>
+    </div>
+
+    <!-- Bootstrapper -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #f59e0b22; color: #f59e0b;">🔧</div>
+        <div>
+          <div class="card-title">bootstrapper</div>
+          <div class="card-subtitle">@hivemi/bootstrapper · ~1.4k LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Configura VMs após provisioning. SSH remoto, instala OpenClaw, configura daemon, injeta secrets, espera registration no Registry.</p>
+        <p><strong>Fases:</strong> cloud-init (user-data), configure (SSH + OpenClaw setup), wait-registration</p>
+        <p><strong>Secrets:</strong> envfile (.env) e 1Password (service account)</p>
+      </div>
+    </div>
+
+    <!-- Agent Runtime -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #10b98122; color: #10b981;">⚡</div>
+        <div>
+          <div class="card-title">agent-runtime</div>
+          <div class="card-subtitle">@hivemi/agent-runtime · 249 LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Runtime helpers para agentes. Logger padronizado, types compartilhados.</p>
+        <p><span class="badge badge-gray">Minimal — pode ser absorvido</span></p>
+      </div>
+    </div>
+
+    <!-- CLI -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #3b82f622; color: #3b82f6;">💻</div>
+        <div>
+          <div class="card-title">cli</div>
+          <div class="card-subtitle">@hivemi/cli · 344 LOC</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>CLI para interagir com o cluster. Comandos para gerenciar agents, tasks, deploys via terminal.</p>
+      </div>
+    </div>
+
+    <!-- LLM -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #ef444422; color: #ef4444;">🧠</div>
+        <div>
+          <div class="card-title">llm</div>
+          <div class="card-subtitle">@hivemi/llm · minimal</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p>Abstração de LLM providers. Atualmente mínimo — agents usam OpenClaw que já abstrai os LLMs.</p>
+        <p><span class="badge badge-gray">Minimal — pode ser absorvido ou removido</span></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 4. DATABASE -->
+<!-- ================================================================== -->
+<div class="section" id="database">
+  <div class="section-title"><span class="emoji">🐘</span> 4. Banco de Dados</div>
+
+  <div class="card">
+    <div class="card-body">
+      <p>PostgreSQL com Drizzle ORM. Schema definido em <code>apps/registry/src/db/schema.ts</code> (304 LOC). Migrations via Drizzle Kit.</p>
+    </div>
+  </div>
+
+  <div class="mermaid-container">
+    <pre class="mermaid">
+    erDiagram
+      teams ||--o{ agents : "has"
+      teams ||--o{ tasks : "has"
+      roles ||--o{ agents : "has"
+      roles ||--o{ tasks : "role_target"
+      agents ||--o{ tasks : "assigned/locked"
+      agents ||--o{ logs : "generates"
+      agents ||--o{ agent_telemetry : "reports"
+      deploys ||--o| agents : "creates"
+      tasks ||--o{ tasks : "parent_task"
+      tasks ||--o{ task_progress : "tracks"
+
+      teams {
+        uuid id PK
+        varchar name
+        varchar emoji
+        varchar color
+      }
+
+      roles {
+        uuid id PK
+        varchar name
+        varchar slug UK
+        text description
+        varchar icon
+        varchar color
+        jsonb capabilities
+        text system_prompt
+      }
+
+      agents {
+        uuid id PK
+        varchar name
+        uuid role_id FK
+        uuid team_id FK
+        enum status
+        varchar model
+        varchar host
+        int port
+        uuid current_task_id
+        timestamp last_heartbeat
+        varchar version
+        varchar openclaw_version
+        jsonb cloud
+        jsonb capabilities_list
+        varchar private_ip
+        uuid deploy_id FK
+      }
+
+      tasks {
+        uuid id PK
+        varchar title
+        text description
+        enum status
+        enum priority
+        uuid agent_id FK
+        uuid team_id FK
+        text input
+        text output
+        text error
+        uuid role_target FK
+        uuid locked_by FK
+        uuid parent_task_id FK
+        jsonb artifacts
+      }
+
+      deploys {
+        uuid id PK
+        uuid agent_id FK
+        varchar agent_name
+        enum cloud_provider
+        varchar region
+        enum instance_size
+        varchar instance_id
+        enum status
+        jsonb phases
+        text error
+      }
+
+      logs {
+        uuid id PK
+        timestamp timestamp
+        enum level
+        varchar source
+        uuid agent_id FK
+        uuid task_id FK
+        text message
+        jsonb metadata
+      }
+
+      agent_telemetry {
+        uuid id PK
+        uuid agent_id FK
+        timestamp timestamp
+        jsonb infra
+        jsonb llm
+        jsonb tasks
+        jsonb daemon
+      }
+
+      settings {
+        varchar key PK
+        jsonb value
+      }
+
+      task_progress {
+        uuid id PK
+        uuid task_id FK
+        text step
+        varchar tool_call
+        timestamp timestamp
+      }
+    </pre>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Tabela</th><th>Propósito</th><th>Enums</th><th>Indexes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>teams</code></td><td>Grupos de agents (ex: "Backend", "DevOps")</td><td>—</td><td>PK</td></tr>
+      <tr><td><code>roles</code></td><td>Tipos de agent (PM, Developer, QA, Tech Lead)</td><td>—</td><td>PK, unique(slug)</td></tr>
+      <tr><td><code>agents</code></td><td>Instâncias de agents registradas</td><td>agent_status (7 valores)</td><td>PK, team_id, role_id</td></tr>
+      <tr><td><code>tasks</code></td><td>Fila de tarefas (pull model)</td><td>task_status (6), task_priority (3)</td><td>PK, team_id, status, role_target+status, locked_by, parent_task_id</td></tr>
+      <tr><td><code>deploys</code></td><td>Registro de deploys (fases, status)</td><td>deploy_status (7), instance_size (3), cloud_provider (2)</td><td>PK, agent_id, status</td></tr>
+      <tr><td><code>logs</code></td><td>Logs dos agents (batch shipping)</td><td>log_level (5)</td><td>PK, agent_id+timestamp</td></tr>
+      <tr><td><code>agent_telemetry</code></td><td>Métricas de infra/LLM/tasks dos agents</td><td>—</td><td>PK, agent_id+timestamp</td></tr>
+      <tr><td><code>settings</code></td><td>Config do cluster (cloud provider, etc)</td><td>—</td><td>PK (key)</td></tr>
+      <tr><td><code>task_progress</code></td><td>Steps dentro de uma task (Phase 2)</td><td>—</td><td>PK, task_id</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ================================================================== -->
+<!-- 5. API ENDPOINTS -->
+<!-- ================================================================== -->
+<div class="section" id="api">
+  <div class="section-title"><span class="emoji">🔌</span> 5. API Endpoints</div>
+
+  <div class="grid-2">
+    <!-- Registry APIs -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #10b98122; color: #10b981;">📋</div>
+        <div>
+          <div class="card-title">Registry (:4001)</div>
+          <div class="card-subtitle">Source of truth — CRUD + daemon protocols</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <ul class="endpoint-list">
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/agents</span><div class="endpoint-desc">Lista agents com JOIN role+team</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/agents</span><div class="endpoint-desc">Registro de daemon (upsert, requer UUID)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/agents/:id</span><div class="endpoint-desc">Agent detail com role+team</div></li>
+          <li><span class="method method-put">PUT</span><span class="endpoint-path">/api/agents/:id</span><div class="endpoint-desc">Update agent (status, etc)</div></li>
+          <li><span class="method method-delete">DEL</span><span class="endpoint-path">/api/agents/:id</span><div class="endpoint-desc">Delete agent</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/agents/:id/heartbeat</span><div class="endpoint-desc">Heartbeat do daemon (30s)</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/agents/:id/telemetry</span><div class="endpoint-desc">Métricas do daemon (60s)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/agents/:id/endpoint</span><div class="endpoint-desc">Resolve endpoint P2P</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/roles</span><div class="endpoint-desc">Lista roles</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/roles</span><div class="endpoint-desc">Criar role (CreateRoleSchema)</div></li>
+          <li><span class="method method-put">PUT</span><span class="endpoint-path">/api/roles/:id</span><div class="endpoint-desc">Update role</div></li>
+          <li><span class="method method-delete">DEL</span><span class="endpoint-path">/api/roles/:id</span><div class="endpoint-desc">Delete role</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/teams</span><div class="endpoint-desc">Lista teams</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/teams</span><div class="endpoint-desc">Criar team (sem Zod schema)</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/tasks</span><div class="endpoint-desc">Lista tasks (filtros: status, teamId, roleTarget)</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/tasks</span><div class="endpoint-desc">Criar task (CreateTaskSchema)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/tasks/next</span><div class="endpoint-desc">Atomic claim (SELECT FOR UPDATE SKIP LOCKED)</div></li>
+          <li><span class="method method-put">PUT</span><span class="endpoint-path">/api/tasks/:id/complete</span><div class="endpoint-desc">Complete/fail task com artifacts + subtasks</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/tasks/:id/retry</span><div class="endpoint-desc">Requeue task</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/tasks/:id/cancel</span><div class="endpoint-desc">Cancel task</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/logs</span><div class="endpoint-desc">Batch log submission (daemon)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/logs</span><div class="endpoint-desc">Query logs (filtros: agentId, level, from, to)</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/deploys</span><div class="endpoint-desc">Register deploy</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/deploys</span><div class="endpoint-desc">List deploys</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/settings/cloud</span><div class="endpoint-desc">Cloud config (provider, region, token)</div></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Manager APIs -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #f59e0b22; color: #f59e0b;">⚙️</div>
+        <div>
+          <div class="card-title">Manager (:4000)</div>
+          <div class="card-subtitle">Orchestration — deploys, demands, infra</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <ul class="endpoint-list">
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/deploy</span><div class="endpoint-desc">Iniciar deploy (5 fases assíncronas)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/deploy</span><div class="endpoint-desc">List deploys (enriched com live state)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/deploy/:id</span><div class="endpoint-desc">Deploy detail (live + registry fallback)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/deploy/:id/stream</span><div class="endpoint-desc">SSE stream de eventos do deploy</div></li>
+          <li><span class="method method-delete">DEL</span><span class="endpoint-path">/api/deploy/:id</span><div class="endpoint-desc">Undeploy (destroy VM + cleanup)</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/deploy/:id/redeploy</span><div class="endpoint-desc">Redeploy (destroy + create novo)</div></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/deploy/:id/retry</span><div class="endpoint-desc">Retry fase falhada</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-post">POST</span><span class="endpoint-path">/api/demands</span><div class="endpoint-desc">Criar task + auto-assign a agent idle</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/infra/reconcile</span><div class="endpoint-desc">Reconciliation (orphaned VMs, phantom agents)</div></li>
+          <li><span class="method method-delete">DEL</span><span class="endpoint-path">/api/infra/reconcile/orphan/:id</span><div class="endpoint-desc">Destroy VM órfã</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/infra/costs</span><div class="endpoint-desc">Cost estimation por instância</div></li>
+          <li style="border-top: 2px solid #1e1e2e; margin-top: 4px; padding-top: 10px;"></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/status</span><div class="endpoint-desc">Dashboard stats (agents, roles, teams)</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/agents</span><div class="endpoint-desc">Proxy → Registry</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/roles</span><div class="endpoint-desc">Proxy → Registry</div></li>
+          <li><span class="method method-get">GET</span><span class="endpoint-path">/api/teams</span><div class="endpoint-desc">Proxy → Registry</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 6. DEPLOY FLOW -->
+<!-- ================================================================== -->
+<div class="section" id="deploy-flow">
+  <div class="section-title"><span class="emoji">🚀</span> 6. Fluxo de Deploy</div>
+
+  <div class="card">
+    <div class="card-body">
+      <p>Deploy de um agent é um processo de 5 fases gerenciado pelo Manager via DeployOrchestrator. Cada fase é registrada no Registry com status e timestamps.</p>
+    </div>
+  </div>
+
+  <div class="mermaid-container">
+    <pre class="mermaid">
+    sequenceDiagram
+      actor U as 👤 Usuário
+      participant D as 🖥️ Dashboard
+      participant M as ⚙️ Manager
+      participant P as ☁️ Provisioner
+      participant B as 🔧 Bootstrapper
+      participant R as 📋 Registry
+      participant VM as 🤖 Agent VM
+
+      U->>D: Click "Deploy Agent"
+      D->>M: POST /api/deploy
+      M->>R: POST /api/deploys (register)
+      M->>R: GET /api/settings/cloud
+
+      rect rgb(30, 30, 46)
+        Note over M,VM: Fase 1: Provisioning
+        M->>P: createInstance(spec)
+        P->>VM: Create VM (DigitalOcean API)
+        P->>P: waitReady(instanceId)
+        P-->>M: { ip, instanceId }
+      end
+
+      rect rgb(30, 30, 46)
+        Note over M,VM: Fase 2: Installing
+        M->>B: bootstrap(config)
+        B->>VM: SSH: install OpenClaw
+        B->>VM: SSH: install daemon
+      end
+
+      rect rgb(30, 30, 46)
+        Note over M,VM: Fase 3: Configuring
+        B->>VM: SSH: write openclaw.json
+        B->>VM: SSH: write secrets (.env)
+        B->>VM: SSH: start daemon
+      end
+
+      rect rgb(30, 30, 46)
+        Note over M,VM: Fase 4: Registering
+        VM->>R: POST /api/agents (self-register)
+        B->>R: poll until agent appears
+      end
+
+      rect rgb(30, 30, 46)
+        Note over M,VM: Fase 5: Ready
+        M->>R: PUT /api/deploys/:id (status: ready)
+        VM->>R: POST /heartbeat (every 30s)
+      end
+
+      D->>D: Poll /api/deploy/:id/stream (SSE)
+    </pre>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 7. TASK FLOW -->
+<!-- ================================================================== -->
+<div class="section" id="task-flow">
+  <div class="section-title"><span class="emoji">📋</span> 7. Fluxo de Tasks (Pull Model)</div>
+
+  <div class="card">
+    <div class="card-body">
+      <p>Tasks usam um modelo <strong>pull</strong>: agents fazem polling do Registry com <code>SELECT FOR UPDATE SKIP LOCKED</code> para claim atômico. Isso evita race conditions e garante que cada task é processada por exatamente um agent.</p>
+    </div>
+  </div>
+
+  <div class="mermaid-container">
+    <pre class="mermaid">
+    sequenceDiagram
+      actor U as 👤 Usuário
+      participant D as 🖥️ Dashboard
+      participant M as ⚙️ Manager
+      participant R as 📋 Registry
+      participant VM as 🤖 Agent Daemon
+
+      U->>D: Create Task (modal)
+      D->>M: POST /api/demands
+      M->>R: POST /api/tasks (create, status: queued)
+      M->>R: GET available agent for team
+      alt Agent disponível
+        M->>R: PUT /api/tasks/:id (status: locked)
+        M->>R: PUT /api/agents/:id (status: working)
+      else Sem agent
+        Note over M: Task fica queued
+      end
+
+      loop Polling (10s interval)
+        VM->>R: GET /api/tasks/next?role=X&agentId=Y
+        R->>R: SELECT FOR UPDATE SKIP LOCKED
+        R-->>VM: task (or 204 No Content)
+      end
+
+      VM->>VM: Execute task via OpenClaw
+      VM->>R: PUT /api/tasks/:id/complete
+      Note right of VM: { status, output, artifacts, subtasks }
+      R->>R: Update task + agent status → idle
+    </pre>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 8. P2P -->
+<!-- ================================================================== -->
+<div class="section" id="p2p">
+  <div class="section-title"><span class="emoji">🔗</span> 8. Comunicação P2P entre Agents</div>
+
+  <div class="card">
+    <div class="card-body">
+      <p>Agents podem se comunicar diretamente via HTTP na rede privada VPC. O Registry funciona como service discovery — um agent resolve o endpoint do outro antes de enviar mensagens.</p>
+      <p><strong>Protocolos:</strong> task-handoff (delegar task), ask (perguntar algo), inform (notificar), review-request (pedir code review)</p>
+      <p><strong>Flow:</strong> Agent A → <code>GET /api/agents/:id/endpoint</code> → resolve IP:port → POST direto no Agent B</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 9. TELEMETRY -->
+<!-- ================================================================== -->
+<div class="section" id="telemetry">
+  <div class="section-title"><span class="emoji">📊</span> 9. Telemetria & Monitoramento</div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #f59e0b22; color: #f59e0b;">💓</div>
+        <div><div class="card-title">Heartbeat</div></div>
+      </div>
+      <div class="card-body">
+        <p>Daemon → Registry a cada <strong>30 segundos</strong>. Inclui status, currentTaskId. Registry marca agent como <code>unreachable</code> se 3 heartbeats consecutivos falharem.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #3b82f622; color: #3b82f6;">📈</div>
+        <div><div class="card-title">Telemetry</div></div>
+      </div>
+      <div class="card-body">
+        <p>Daemon → Registry a cada <strong>60 segundos</strong>. Métricas de infra (CPU, RAM, disk), LLM (requests, tokens, latência), tasks (completed, failed, active), daemon (uptime, version).</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #8b5cf622; color: #8b5cf6;">📝</div>
+        <div><div class="card-title">Log Shipping</div></div>
+      </div>
+      <div class="card-body">
+        <p>Daemon → Registry a cada <strong>5 minutos</strong> (batch). Só envia warn, error, lifecycle. Armazena em tabela <code>logs</code> com metadata JSONB.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background: #ef444422; color: #ef4444;">🔍</div>
+        <div><div class="card-title">Offline Detection</div></div>
+      </div>
+      <div class="card-body">
+        <p>Background job no Registry. Verifica <code>last_heartbeat</code> dos agents. Se > 2 minutos sem heartbeat → status muda para <code>unreachable</code>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 10. DASHBOARD -->
+<!-- ================================================================== -->
+<div class="section" id="dashboard">
+  <div class="section-title"><span class="emoji">🖥️</span> 10. Dashboard (Frontend)</div>
+
+  <div class="card">
+    <div class="card-body">
+      <table>
+        <thead>
+          <tr><th>Página</th><th>Rota</th><th>Componentes</th><th>Dados</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Home (Agents)</td><td><code>/</code></td><td>AgentCard, StatusBar, DeployAgentModal, ConfirmDialog</td><td>agents (grouped by team), roles, teams</td></tr>
+          <tr><td>Agent Detail</td><td><code>/agents/[id]</code></td><td>Stats, Recent Tasks, Recent Logs, Role Info</td><td>agent, tasks (filtered), logs (filtered)</td></tr>
+          <tr><td>Tasks</td><td><code>/tasks</code></td><td>TaskCard, TaskDetailModal, TaskFilters, CreateTaskModal</td><td>tasks, teams, agents</td></tr>
+          <tr><td>Teams</td><td><code>/teams</code></td><td>TeamCard, TeamModal</td><td>teams, agents (count)</td></tr>
+          <tr><td>Roles</td><td><code>/roles</code></td><td>RoleCard, RoleModal, RoleIcon</td><td>roles, agents (count)</td></tr>
+          <tr><td>Settings</td><td><code>/settings</code></td><td>7 seções: General, Infra, Agents, LLM, Secrets, Notifications, Danger</td><td>infra/reconcile, infra/costs, settings</td></tr>
+          <tr><td>Logs</td><td><code>/logs</code></td><td>Filters, Search, Live mode, Export</td><td>logs (query params)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background: #10b98122; color: #10b981;">🧪</div>
+      <div>
+        <div class="card-title">Testes</div>
+        <div class="card-subtitle">Playwright · 100 testes · 100% passando</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <table>
+        <thead>
+          <tr><th>Arquivo</th><th>Testes</th><th>Cobertura</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>dashboard.spec.ts</code></td><td>41</td><td>Navigation, layout, theme, responsiveness, basic pages</td></tr>
+          <tr><td><code>forms.spec.ts</code></td><td>59</td><td>All modals, form validation, submit/error, API payloads</td></tr>
+          <tr><td><code>integration.spec.ts</code></td><td>🔄</td><td>E2E com backend real (em progresso)</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 8px;"><strong>330 cenários documentados</strong> em TEST_SCENARIOS.md (142) + FORM_TEST_SCENARIOS.md (188)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 11. FILE STRUCTURE -->
+<!-- ================================================================== -->
+<div class="section" id="file-structure">
+  <div class="section-title"><span class="emoji">📁</span> 11. Estrutura de Arquivos</div>
+
+  <div class="file-tree">
+<span class="dir">hivemi/</span>
+├── <span class="dir">apps/</span>
+│   ├── <span class="dir">dashboard/</span>          <span class="comment"># Next.js 16 — UI + API proxy (:3000)</span>
+│   │   └── <span class="dir">src/</span>
+│   │       ├── <span class="dir">app/</span>            <span class="comment"># Pages + API routes</span>
+│   │       │   ├── <span class="file">page.tsx</span>        <span class="comment"># Home (agents list)</span>
+│   │       │   ├── <span class="dir">agents/[id]/</span>   <span class="comment"># Agent detail page</span>
+│   │       │   ├── <span class="dir">tasks/</span>         <span class="comment"># Tasks page</span>
+│   │       │   ├── <span class="dir">teams/</span>         <span class="comment"># Teams page</span>
+│   │       │   ├── <span class="dir">roles/</span>         <span class="comment"># Roles page</span>
+│   │       │   ├── <span class="dir">settings/</span>      <span class="comment"># Settings (7 sections)</span>
+│   │       │   ├── <span class="dir">logs/</span>          <span class="comment"># Logs viewer</span>
+│   │       │   └── <span class="dir">api/</span>           <span class="comment"># 35+ proxy routes → Registry/Manager</span>
+│   │       ├── <span class="dir">components/</span>     <span class="comment"># 16 React components</span>
+│   │       ├── <span class="dir">hooks/</span>          <span class="comment"># use-api (SWR-like)</span>
+│   │       └── <span class="dir">lib/</span>            <span class="comment"># api.ts, proxy.ts, utils.ts</span>
+│   │
+│   ├── <span class="dir">manager/</span>            <span class="comment"># Hono — Orchestrator (:4000)</span>
+│   │   └── <span class="dir">src/</span>
+│   │       ├── <span class="file">routes.ts</span>       <span class="comment"># Main router (510 LOC)</span>
+│   │       ├── <span class="dir">routes/</span>         <span class="comment"># deploy.ts, tasks.ts, infra.ts</span>
+│   │       └── <span class="dir">lib/</span>            <span class="comment"># deploy-orchestrator.ts (917 LOC!)</span>
+│   │
+│   └── <span class="dir">registry/</span>           <span class="comment"># Hono — Source of truth (:4001)</span>
+│       └── <span class="dir">src/</span>
+│           ├── <span class="file">routes.ts</span>       <span class="comment"># Main router (449 LOC)</span>
+│           ├── <span class="dir">routes/</span>         <span class="comment"># 8 route files</span>
+│           ├── <span class="dir">db/</span>             <span class="comment"># schema.ts (304 LOC), index.ts</span>
+│           └── <span class="dir">lib/</span>            <span class="comment"># offline-detection, lock-timeout, crypto</span>
+│
+├── <span class="dir">packages/</span>
+│   ├── <span class="dir">protocol/</span>           <span class="comment"># 📐 Zod schemas, auth middleware (884 LOC)</span>
+│   ├── <span class="dir">agent-daemon/</span>       <span class="comment"># 🤖 VM daemon: poller, executor, P2P (~3k LOC)</span>
+│   ├── <span class="dir">provisioner/</span>        <span class="comment"># ☁️ Cloud providers: DO, GCP, reconciliation (~1.8k LOC)</span>
+│   ├── <span class="dir">bootstrapper/</span>       <span class="comment"># 🔧 SSH bootstrap: OpenClaw install, config (~1.4k LOC)</span>
+│   ├── <span class="dir">agent-runtime/</span>      <span class="comment"># ⚡ Runtime helpers (249 LOC)</span>
+│   ├── <span class="dir">cli/</span>                <span class="comment"># 💻 CLI tool (344 LOC)</span>
+│   └── <span class="dir">llm/</span>                <span class="comment"># 🧠 LLM abstraction (minimal)</span>
+│
+├── <span class="dir">tests/</span>
+│   ├── <span class="dir">ui/</span>                 <span class="comment"># Playwright: 100+ tests</span>
+│   └── <span class="dir">e2e/</span>                <span class="comment"># API tests (Vitest)</span>
+│
+├── <span class="dir">docs/</span>
+│   └── <span class="dir">architecture/</span>       <span class="comment"># This doc + token-telemetry.html</span>
+│
+└── <span class="file">pnpm-workspace.yaml</span>  <span class="comment"># Monorepo config</span>
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- 12. TECH STACK -->
+<!-- ================================================================== -->
+<div class="section" id="tech-stack">
+  <div class="section-title"><span class="emoji">🛠️</span> 12. Stack Tecnológica</div>
+
+  <div class="grid-3">
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">📦</div>
+      <div class="card-title">Runtime</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-green">Node.js 22</span>
+        <span class="badge badge-amber">TypeScript</span>
+        <span class="badge badge-purple">pnpm</span>
+      </div>
+    </div>
+
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">🖥️</div>
+      <div class="card-title">Frontend</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-blue">Next.js 16</span>
+        <span class="badge badge-cyan">React 19</span>
+        <span class="badge badge-purple">Tailwind 4</span>
+      </div>
+    </div>
+
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">⚙️</div>
+      <div class="card-title">Backend</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-amber">Hono</span>
+        <span class="badge badge-green">Drizzle ORM</span>
+        <span class="badge badge-blue">PostgreSQL</span>
+      </div>
+    </div>
+
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">☁️</div>
+      <div class="card-title">Cloud</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-blue">DigitalOcean</span>
+        <span class="badge badge-gray">GCP (stub)</span>
+      </div>
+    </div>
+
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">✅</div>
+      <div class="card-title">Validação</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-purple">Zod</span>
+        <span class="badge badge-green">Playwright</span>
+        <span class="badge badge-amber">Vitest</span>
+      </div>
+    </div>
+
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 2em; margin-bottom: 8px;">🤖</div>
+      <div class="card-title">AI</div>
+      <div class="card-body" style="margin-top: 8px;">
+        <span class="badge badge-red">OpenClaw</span>
+        <span class="badge badge-purple">Multi-LLM</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+      <div class="card-icon" style="background: #f59e0b22; color: #f59e0b;">🔗</div>
+      <div><div class="card-title">Dependency Graph</div></div>
+    </div>
+    <div class="card-body">
+      <div class="mermaid-container">
+        <pre class="mermaid">
+        graph LR
+          subgraph Apps
+            DASH[Dashboard]
+            MGR[Manager]
+            REG[Registry]
+          end
+
+          subgraph Packages
+            PROTO[protocol]
+            DAEMON[agent-daemon]
+            PROV[provisioner]
+            BOOT[bootstrapper]
+            RT[agent-runtime]
+            CLI[cli]
+            LLM[llm]
+          end
+
+          DASH --> PROTO
+          MGR --> PROTO
+          MGR --> PROV
+          MGR --> BOOT
+          REG --> PROTO
+
+          DAEMON --> PROTO
+          DAEMON --> RT
+          BOOT --> PROTO
+          PROV --> PROTO
+          CLI --> PROTO
+
+          style PROTO fill:#8b5cf622,stroke:#8b5cf6
+          style DASH fill:#3b82f622,stroke:#3b82f6
+          style MGR fill:#f59e0b22,stroke:#f59e0b
+          style REG fill:#10b98122,stroke:#10b981
+        </pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div style="text-align: center; margin-top: 60px; padding: 30px 0; border-top: 1px solid #1e1e2e; color: #555; font-size: 0.85em;">
+  <p>🐝 HiveMI System Architecture — Generated by Clawdia 🦞</p>
+  <p style="margin-top: 4px;">v0.1.0 · February 2026 · <a href="https://github.com/ijoaum/hivemi" style="color: #f59e0b; text-decoration: none;">github.com/ijoaum/hivemi</a></p>
+</div>
+
+</div>
+</body>
+</html>
