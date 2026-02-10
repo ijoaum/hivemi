@@ -259,25 +259,13 @@ configure_openclaw() {
   # Generate config JSON
   # Tokens and channel-specific settings come from environment variables
   # set by the Bootstrapper when it injects config
+  # Model config (primary, aliases, heartbeat model) is NOT set here —
+  # it depends on which auth provider is configured at deploy time.
+  # The Bootstrapper injects model settings along with auth tokens.
   cat > "$config_file" << 'OPENCLAW_CONFIG'
 {
   "agents": {
     "defaults": {
-      "model": {
-        "primary": "github-copilot/claude-opus-4.6"
-      },
-      "models": {
-        "openai-codex/gpt-5.2": {},
-        "anthropic/claude-sonnet-4-5": {
-          "alias": "sonnet"
-        },
-        "github-copilot/claude-opus-4.5": {
-          "alias": "opus45"
-        },
-        "github-copilot/claude-opus-4.6": {
-          "alias": "opus46"
-        }
-      },
       "workspace": "/home/openclaw/.openclaw/workspace",
       "contextPruning": {
         "mode": "cache-ttl",
@@ -287,10 +275,6 @@ configure_openclaw() {
         "mode": "safeguard"
       },
       "elevatedDefault": "full",
-      "heartbeat": {
-        "every": "1h",
-        "model": "openai-codex/gpt-5.2"
-      },
       "maxConcurrent": 4,
       "subagents": {
         "maxConcurrent": 8
