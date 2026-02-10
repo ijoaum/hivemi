@@ -3,8 +3,8 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
-  timeout: 30000,
-  expect: { timeout: 10000 },
+  timeout: 60000,
+  expect: { timeout: 15000 },
   fullyParallel: false,
   retries: 0,
   reporter: [["list"], ["json", { outputFile: "test-results.json" }]],

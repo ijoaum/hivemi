@@ -124,6 +124,7 @@ export default function Home() {
 
   const handleDeploy = async (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {
     await agentsApi.create({
+      id: crypto.randomUUID(),
       name: data.name,
       roleId: data.roleId,
       teamId: data.teamId,
