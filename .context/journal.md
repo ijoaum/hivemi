@@ -1,5 +1,103 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #81: Firewall: Regras de IP Público
+
+### Summary
+Implemented automatic firewall configuration for HiveMI agent VMs. The provisioner now generates and applies security rules that restrict SSH to the control plane + authorized IPs, lock down the daemon port to control plane only, allow free VPC communication, and block all other inbound public ports. Configurable via `FirewallConfig` with support for authorized IPs, VPC CIDR, custom daemon port, additional ports, and ICMP toggle.
+
+### What was done
+
+1. **`FirewallConfig` type and config module** (`packages/provisioner/src/config.ts`):
+   - `FirewallConfig` interface: `controlPlaneIp`, `authorizedIps`, `vpcCidr`, `daemonPort`, `additionalPorts`, `allowIcmp`, `name`
+   - `DEFAULT_FIREWALL_CONFIG`: sensible defaults (VPC `10.0.0.0/8`, daemon 3100, ICMP on)
+   - `buildFirewallConfig()`: merges user overrides with defaults
+   - `generateFirewallRules()`: produces complete `FirewallRule[]` from config
+   - `normalizeCidr()`: appends `/32` to bare IPs
+   - `isValidCidr()`: validates IPv4/CIDR strings
+
+2. **Security model** (enforced by `generateFirewallRules`):
+   - **SSH (22)**: restricted to control plane IP + explicitly authorized IPs
+   - **Daemon (3100)**: restricted to control plane ONLY — even authorized IPs can't reach it
+   - **VPC**: all TCP/UDP ports open within private CIDR (inter-agent + control plane ↔ agent)
+   - **Additional ports**: from control plane only
+   - **ICMP**: from anywhere (configurable, for monitoring)
+   - **Everything else**: blocked on public interface
+   - **All outbound**: allowed (LLM APIs, package managers, DNS)
+
+3. **Enhanced `FirewallManager`** (`packages/provisioner/src/firewall.ts`):
+   - `ensureFirewall()` now accepts options: `authorizedIps`, `vpcCidr`, `daemonPort`, `additionalPorts`
+   - `updateAuthorizedIps()`: hot-update authorized IP list with change detection
+   - `updateControlPlaneIP()`: preserves authorized IPs and VPC config when IP changes
+   - Instance tracking: `addInstance()`/`removeInstance()` maintain a `trackedInstances` set
+   - `getConfig()`: returns current config snapshot
+   - `getTrackedInstances()`: returns tracked instance IDs
+   - Rule summary logging on create/update
+
+4. **Enhanced `InfraManager`** (`packages/provisioner/src/infra-manager.ts`):
+   - `InfraState` extended: `authorizedIps`, `vpcCidr` fields
+   - `InfraSetupResult` extended: `authorizedIps`, `vpcCidr` fields
+   - `setup()` accepts `authorizedIps` and `vpcCidr` options, passes to FirewallManager
+   - `updateAuthorizedIps()`: delegates to FirewallManager + updates state
+   - `loadState()` handles new fields
+   - Default VPC CIDR: `10.0.0.0/8` (DigitalOcean standard)
+
+5. **Backward compatibility**:
+   - `createDefaultRules()` signature preserved with optional `authorizedIps` parameter
+   - Now includes VPC rules by default (was previously missing)
+   - All existing consumers continue to work
+
+6. **64 new tests** (`packages/provisioner/src/__tests__/firewall-rules.test.ts`):
+   - **Config utilities (14 tests)**: normalizeCidr, isValidCidr, buildFirewallConfig, DEFAULT_FIREWALL_CONFIG
+   - **Rule generation (14 tests)**: SSH, daemon, authorized IPs, VPC, ICMP, additional ports, custom daemon port, outbound, CIDR handling, production config
+   - **createDefaultRules compat (4 tests)**: backward compatibility, authorized IPs, VPC rules, CIDR input
+   - **FirewallManager (20 tests)**: ensureFirewall (7), addInstance (3), removeInstance (3), updateControlPlaneIP (4), updateAuthorizedIps (4), getConfig (3), setFirewallId (1)
+   - **Security verification (5 tests)**: daemon never exposed to 0.0.0.0/0, authorized IPs excluded from daemon, SSH never wide open, VPC limited to private CIDR, additional ports restricted
+   - **Instance lifecycle (3 tests)**: add/remove cycle, multiple instances, unknown instance removal
+
+7. **Updated 2 existing tests** to account for new VPC default rules:
+   - `provisioner.test.ts`: `createDefaultRules` now returns 5 inbound rules (was 3)
+   - `infra.test.ts`: same update
+
+### Key Decisions
+- **Daemon port locked to control plane only** — even explicitly authorized IPs cannot reach the daemon. The daemon controls agent behavior; only the control plane should have access. SSH access is more permissible because it's key-authenticated.
+- **VPC rules enabled by default** — DigitalOcean VPCs use 10.x.x.x ranges. Allowing all ports within VPC is essential for inter-agent communication and control plane → agent private network access. Can be disabled by setting `vpcCidr: null`.
+- **Authorized IPs are separate from VPC** — authorized IPs grant SSH access from specific public IPs (e.g., developer machines). VPC access is for private network communication. Different use cases, different security posture.
+- **Config-driven rule generation** — `generateFirewallRules()` is a pure function: config in, rules out. Easy to test, easy to reason about. `FirewallManager` handles lifecycle and state.
+- **Instance tracking in FirewallManager** — tracking which instances belong to a firewall enables proper cleanup on destroy and future reconciliation features.
+- **`normalizeCidr` always adds /32** — bare IPs (e.g., `1.2.3.4`) are automatically converted to `1.2.3.4/32`. Prevents common mistakes where users forget the CIDR notation.
+
+### Acceptance Criteria
+- [x] Firewall created/updated automatically during provisioning (ensureFirewall with options)
+- [x] SSH accessible only from control plane IP + authorized IPs
+- [x] Daemon port (internal) blocked on public IP, only control plane
+- [x] VPC communication working normally (all ports open within VPC CIDR)
+- [x] Authorized IPs configurable (authorizedIps in config, updateAuthorizedIps at runtime)
+- [x] Rules removed when VM destroyed (removeInstance tracking)
+- [x] Logs for firewall creation/update (rule summary logging)
+- [x] Tests passing (64 new + 251 total)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/provisioner/src/config.ts` | NEW — FirewallConfig, generateFirewallRules, normalizeCidr, isValidCidr |
+| `packages/provisioner/src/firewall.ts` | Enhanced — VPC, authorized IPs, instance tracking, config-driven |
+| `packages/provisioner/src/infra-manager.ts` | Enhanced — authorizedIps, vpcCidr in state/setup/loadState |
+| `packages/provisioner/src/index.ts` | +config.ts exports |
+| `packages/provisioner/src/__tests__/firewall-rules.test.ts` | NEW — 64 tests |
+| `packages/provisioner/src/__tests__/provisioner.test.ts` | Updated for VPC default rules |
+| `packages/provisioner/src/__tests__/infra.test.ts` | Updated for VPC default rules |
+
+### Commits
+- `ce14f64` — feat(provisioner): firewall public IP rules — VPC, authorized IPs, daemon lockdown (#81)
+
+### Next
+- Integration with deploy orchestrator cloud-init to inject firewall ID
+- Dashboard UI for managing authorized IPs
+- Periodic firewall reconciliation (detect drift)
+- GCP equivalent firewall rules
+
+---
+
 ## 2026-02-15 — Issue #80: Registry Bind to Private Interface (VPC)
 
 ### Summary
