@@ -1,5 +1,112 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #86: Task Timeout Recovery
+
+### Summary
+Implemented a periodic timeout recovery job in the Registry that detects stuck tasks (status=locked, agent's lastHeartbeat older than a configurable threshold) and marks them as failed with reason "timeout". Added the `timeoutAt` field to the task schema, Dashboard timeout indicators (orange badge with ⏱️ icon), structured logging, and webhook notifications. 60 new tests covering detection logic, status transitions, configuration, logging, webhooks, dashboard indicators, edge cases, and SQL query structure.
+
+### What was done
+
+1. **Timeout Recovery Job** (`apps/registry/src/lib/timeout-recovery.ts`):
+   - `checkTaskTimeouts()` — main function that detects and times out stuck tasks
+   - Joins `tasks` (status=locked, lockedAt NOT NULL) with `agents` to check `lastHeartbeat`
+   - Uses LEFT JOIN to handle tasks where the agent has been deleted
+   - Detects tasks where `agent.lastHeartbeat < cutoff` OR `lastHeartbeat IS NULL`
+   - For each stuck task:
+     1. Marks task as `failed` with `error="timeout"`, sets `timeoutAt` and `completedAt`
+     2. Clears lock fields (`lockedBy`, `lockedAt`)
+     3. Resets agent to `idle`, clears `currentTaskId`
+     4. Writes structured log entry with `component="timeout-recovery"` to logs table
+   - Webhook notification when timeouts are detected (limited to 10 tasks in payload)
+   - `startTimeoutRecovery()` / `stopTimeoutRecovery()` lifecycle functions
+   - 10s startup delay, then runs every `intervalMs` (default: 5 minutes)
+   - Concurrent error handling: individual task failures don't stop processing others
+
+2. **DB Schema** (`apps/registry/src/db/schema.ts`):
+   - Added `timeoutAt` timestamp column to `tasks` table (nullable)
+
+3. **Protocol** (`packages/protocol/src/types.ts`):
+   - Added `timeoutAt: z.coerce.date().nullable().optional()` to `TaskSchema`
+
+4. **Registry Startup** (`apps/registry/src/index.ts`):
+   - Added `startTimeoutRecovery()` call on server start
+   - Three env vars: `TIMEOUT_THRESHOLD_MS` (30 min), `TIMEOUT_CHECK_INTERVAL_MS` (5 min), `TIMEOUT_WEBHOOK_URL`
+
+5. **Dashboard Task Card** (`apps/dashboard/src/components/task-card.tsx`):
+   - `isTimeout()` helper: detects timeout via `error === "timeout"` or `timeoutAt` presence
+   - Orange color scheme for timeout tasks (distinct from red "Failed")
+   - ⏱️ icon next to task title for timeout tasks
+   - Orange border for timeout cards (vs red for regular failures)
+   - Dedicated timeout message: "Task timed out — no heartbeat from agent"
+
+6. **Dashboard Task Detail Modal** (`apps/dashboard/src/components/task-detail-modal.tsx`):
+   - Orange "⏱️ timed out" status badge for timeout tasks
+   - Timeout section with explanation: "This task was automatically marked as failed because the agent stopped sending heartbeats"
+   - `timeoutAt` timestamp shown in meta grid when present
+   - Regular error section hidden for timeout tasks (avoids showing raw "timeout" string)
+
+7. **Dashboard Types**:
+   - `apps/dashboard/src/lib/api.ts`: Added `timeoutAt: string | null` to `Task` interface
+   - `apps/dashboard/src/types/task.ts`: Added `timeoutAt?: Date` to `Task` interface
+
+8. **60 new tests** (`apps/registry/src/__tests__/timeout-recovery.test.ts`):
+   - **Detection Logic (5)**: threshold detection, within threshold, null heartbeat, default threshold, default interval
+   - **Status Transitions (5)**: failed status, timeoutAt set, completedAt set, lock fields cleared, only locked tasks
+   - **Agent Reset (3)**: idle after timeout, no agent (null), deleted agent
+   - **Configuration (6)**: custom threshold, custom interval, webhook URL, no webhook, TIMEOUT_THRESHOLD_MS, TIMEOUT_CHECK_INTERVAL_MS
+   - **Log Entries (4)**: structured log, lockedAt metadata, component name, unknown agent
+   - **Webhook Notifications (4)**: payload shape, 10 task limit, no send when 0, failure handling
+   - **Schema (3)**: nullable timeoutAt, null for non-timeout, distinguish via timeoutAt
+   - **Dashboard Indicators (7)**: timed out label, failed label, orange colors, icon, explanation, timeoutAt in detail, non-timeout
+   - **Job Lifecycle (3)**: startup delay, duplicate prevention, cleanup
+   - **vs Lock Timeout (3)**: working agent detection, heartbeat timing, longer threshold
+   - **Edge Cases (8)**: empty set, multiple tasks, same agent, null lockedAt, old heartbeat, not cancelling, result shape, DB errors
+   - **SQL Query (5)**: join condition, LEFT JOIN, status filter, heartbeat check, lockedAt NOT NULL
+   - **Registry Integration (4)**: env vars, startup order
+
+### Key Decisions
+- **Separate from lock-timeout.ts** — the existing lock-timeout.ts releases stale locks when agents are DEAD (offline/unreachable/destroyed). Timeout recovery catches a different case: agents that appear "working" but have stopped heartbeating — indicating a hung process, not a dead agent. Different detection criteria, different thresholds.
+- **30 min default threshold** — longer than lock-timeout's 10 min default. A task might legitimately take a long time (e.g., large code generation). 30 min without a single heartbeat (agent sends them every 30s) means ~60 missed heartbeats — clearly stuck.
+- **5 min check interval** — frequent enough to catch timeouts promptly, but not so frequent as to hammer the DB. A 30-min threshold + 5-min check means worst case a stuck task is caught within 35 min.
+- **Mark as failed, not requeued** — timed-out tasks likely failed due to an infrastructure issue. Requeuing could lead to infinite retry loops. Better to mark as failed and let the user decide whether to retry.
+- **timeoutAt field** — distinguishes timeout failures from other failures. The Dashboard uses this to show a different visual treatment (orange vs red) with a specific explanation.
+- **Webhook for notifications** — same pattern as reconciliation job. Simple, universal. Works with Slack, Discord, etc.
+
+### Acceptance Criteria
+- [x] Job periódico rodando a cada 5 min
+- [x] Tasks travadas detectadas corretamente (locked + stale heartbeat)
+- [x] Threshold de timeout configurável (TIMEOUT_THRESHOLD_MS env var)
+- [x] Tasks marcadas como failed com reason timeout
+- [x] Campo timeout_at adicionado ao schema
+- [x] Notificações enviadas quando há timeout (webhook)
+- [x] Dashboard mostra indicador de timeout (orange badge, ⏱️ icon, explanation)
+- [x] Logs gerados para cada timeout detectado (component: timeout-recovery)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/registry/src/lib/timeout-recovery.ts` | NEW — timeout recovery job |
+| `apps/registry/src/db/schema.ts` | +timeoutAt column on tasks table |
+| `apps/registry/src/index.ts` | Start timeout recovery job + env config |
+| `packages/protocol/src/types.ts` | +timeoutAt on TaskSchema |
+| `apps/dashboard/src/lib/api.ts` | +timeoutAt on Task interface |
+| `apps/dashboard/src/types/task.ts` | +timeoutAt on Task interface |
+| `apps/dashboard/src/components/task-card.tsx` | Timeout indicator (orange, ⏱️) |
+| `apps/dashboard/src/components/task-detail-modal.tsx` | Timeout info section |
+| `apps/registry/src/__tests__/timeout-recovery.test.ts` | NEW — 60 tests |
+
+### Commits
+- `6d495ef` — feat(registry,dashboard): task timeout recovery — periodic job detects stuck tasks, marks as failed with timeout reason, dashboard indicators (#86)
+- `6de29a0` — test(registry): 60 timeout recovery tests — detection logic, status transitions, config, logging, webhooks, dashboard indicators (#86)
+
+### Next
+- DB migration for `timeout_at` column (when running against real Postgres)
+- Dashboard: filter tasks by timeout (e.g., "Show timed out tasks" filter option)
+- Configurable retry-on-timeout (auto-requeue timed-out tasks with max retries)
+- Integration test with real heartbeat flow
+
+---
+
 ## 2026-02-15 — Issue #85: Task Cancellation via Heartbeat
 
 ### Summary
