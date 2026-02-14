@@ -4,7 +4,6 @@
 // Handles registration, heartbeat, task polling, telemetry, and log shipping.
 // =============================================================================
 
-import { networkInterfaces } from "node:os";
 import type {
   DaemonConfig,
   DaemonLogger,
@@ -15,33 +14,7 @@ import type {
   TaskResult,
   TelemetrySnapshot,
 } from "./types.js";
-
-/**
- * Detect the private VPC IP address.
- * Looks for a 10.x.x.x, 172.16-31.x.x, or 192.168.x.x IPv4 address
- * on a non-loopback interface. Returns null if none found.
- */
-function detectPrivateIp(): string | null {
-  const ifaces = networkInterfaces();
-  for (const [, addrs] of Object.entries(ifaces)) {
-    if (!addrs) continue;
-    for (const addr of addrs) {
-      if (addr.family !== "IPv4" || addr.internal) continue;
-      // Match RFC1918 private ranges
-      if (
-        addr.address.startsWith("10.") ||
-        addr.address.startsWith("172.16.") || addr.address.startsWith("172.17.") ||
-        addr.address.startsWith("172.18.") || addr.address.startsWith("172.19.") ||
-        addr.address.startsWith("172.2") || addr.address.startsWith("172.30.") ||
-        addr.address.startsWith("172.31.") ||
-        addr.address.startsWith("192.168.")
-      ) {
-        return addr.address;
-      }
-    }
-  }
-  return null;
-}
+import { detectPrivateIp, detectPublicIp } from "./networking.js";
 
 export class RegistryClient implements IRegistryClient {
   private readonly baseUrl: string;
@@ -51,6 +24,12 @@ export class RegistryClient implements IRegistryClient {
   private readonly config: DaemonConfig;
   private readonly logger: DaemonLogger;
 
+  /** Cached private IP detected at registration time */
+  private cachedPrivateIp: string | null = null;
+
+  /** Cached public IP detected at registration time */
+  private cachedPublicIp: string | null = null;
+
   constructor(config: DaemonConfig, logger: DaemonLogger) {
     this.baseUrl = config.registryUrl.replace(/\/$/, "");
     this.agentId = config.agentId;
@@ -58,6 +37,16 @@ export class RegistryClient implements IRegistryClient {
     this.secret = config.hivemiSecret;
     this.config = config;
     this.logger = logger;
+  }
+
+  /** Get the detected private IP (available after register()) */
+  getPrivateIp(): string | null {
+    return this.cachedPrivateIp;
+  }
+
+  /** Get the detected public IP (available after register()) */
+  getPublicIp(): string | null {
+    return this.cachedPublicIp;
   }
 
   private headers(): Record<string, string> {
@@ -95,10 +84,20 @@ export class RegistryClient implements IRegistryClient {
 
     // Detect private VPC IP for internal communication
     const privateIp = detectPrivateIp();
+    const publicIp = detectPublicIp();
+
+    // Cache for reuse in heartbeat
+    this.cachedPrivateIp = privateIp;
+    this.cachedPublicIp = publicIp;
+
     if (privateIp) {
       this.logger.info(`Detected private IP: ${privateIp}`);
     } else {
       this.logger.warn("No private IP detected — agent will use public IP for communication");
+    }
+
+    if (publicIp) {
+      this.logger.info(`Detected public IP: ${publicIp}`);
     }
 
     const res = await this.request("POST", "/api/agents", {
@@ -107,9 +106,10 @@ export class RegistryClient implements IRegistryClient {
       roleId: this.config.roleId,
       teamId: this.config.teamId,
       model: this.config.model,
-      host: privateIp || "0.0.0.0",
+      host: privateIp || publicIp || "0.0.0.0",
       port: this.config.daemonPort,
       ...(privateIp ? { privateIp } : {}),
+      ...(publicIp ? { publicIp } : {}),
     });
 
     if (res.ok) {
@@ -136,6 +136,7 @@ export class RegistryClient implements IRegistryClient {
       status,
       currentTaskId,
       timestamp: new Date().toISOString(),
+      ...(this.cachedPrivateIp ? { privateIp: this.cachedPrivateIp } : {}),
     });
 
     if (res.ok) {

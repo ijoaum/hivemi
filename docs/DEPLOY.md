@@ -146,3 +146,69 @@ curl http://10.116.0.2:4001/health
 curl http://<PUBLIC_IP>:4001/health
 # Expected: connection refused or timeout
 ```
+
+## Agent Private IP Detection (Issue #82)
+
+### How it works
+
+When an agent daemon starts, it automatically detects its private VPC IP and uses it
+for all inter-agent communication. The detection happens at registration time:
+
+1. **Enumerate** all network interfaces via `os.networkInterfaces()`
+2. **Filter** IPv4 addresses, skip loopback (127.x.x.x)
+3. **Match** against RFC1918 private ranges:
+   - `10.0.0.0/8` — DigitalOcean VPC, AWS VPC, GCP VPC
+   - `172.16.0.0/12` — Docker default bridges, some VPCs
+   - `192.168.0.0/16` — Home networks, some VPCs
+4. **Prefer** `10.x.x.x` addresses (most common in cloud VPCs)
+5. **Cache** the detected IP for use in heartbeats and P2P
+
+### What gets stored
+
+The Registry stores both IPs separately:
+
+| Field | Source | Usage |
+|-------|--------|-------|
+| `host` | Private IP (preferred) or public IP | Primary address for communication |
+| `privateIp` | Auto-detected VPC address (10.x, 172.16-31.x, 192.168.x) | P2P agent-to-agent, displayed in Dashboard |
+| `publicIp` | Auto-detected non-private address | Fallback communication, monitoring |
+
+### Heartbeat IP updates
+
+Every 30-second heartbeat includes the current private IP. If the IP changes (e.g., VM
+migration within VPC), the Registry is automatically updated without re-registration.
+
+### P2P communication
+
+When Agent A needs to communicate with Agent B:
+
+1. Agent A calls `GET /api/agents/:id/endpoint` → gets `{ host, port, privateIp }`
+2. If `privateIp` is available → uses `http://<privateIp>:<port>/message` (VPC, low latency)
+3. If `privateIp` is null → falls back to `http://<host>:<port>/message` (public IP)
+
+### Fallback behavior
+
+| Scenario | `host` value | `privateIp` | P2P behavior |
+|----------|-------------|-------------|--------------|
+| VPC (normal) | `10.116.0.5` | `10.116.0.5` | Uses private IP |
+| Public only | `165.245.1.1` | `null` | Uses public IP |
+| No network | `0.0.0.0` | `null` | Agent unreachable |
+
+### Dashboard
+
+The agent detail page shows both IPs when available:
+- **Private IP (VPC)** — the VPC address used for inter-agent communication
+- **Public IP** — the external address (visible only when detected)
+
+### Networking module
+
+The IP detection logic lives in `packages/agent-daemon/src/networking.ts`:
+
+```typescript
+import { detectPrivateIp, detectPublicIp, isPrivateIp } from "@hivemi/agent-daemon";
+
+const privateIp = detectPrivateIp();  // "10.116.0.5" or null
+const publicIp = detectPublicIp();    // "165.245.132.133" or null
+isPrivateIp("10.0.0.1");             // true
+isPrivateIp("8.8.8.8");              // false
+```

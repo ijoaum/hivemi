@@ -45,6 +45,7 @@ export interface Agent {
     instanceId: string;
   } | null;
   privateIp: string | null;
+  publicIp: string | null;
   deployId: string | null;
   createdAt: string;
   updatedAt: string;

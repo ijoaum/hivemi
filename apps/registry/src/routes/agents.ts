@@ -89,12 +89,14 @@ app.post("/", async (c) => {
           openclawVersion: data.openclawVersion ?? null,
           cloud: data.cloud ?? null,
           capabilities: data.capabilities,
+          privateIp: data.privateIp ?? null,
+          publicIp: data.publicIp ?? null,
           updatedAt: now,
         })
         .where(eq(agents.id, data.id))
         .returning();
 
-      logger.info({ agentId: data.id, name: data.name }, "Agent registered (updated)");
+      logger.info({ agentId: data.id, name: data.name, privateIp: data.privateIp, publicIp: data.publicIp }, "Agent registered (updated)");
       return c.json({ success: true, data: updated }, 200);
     }
 
@@ -115,6 +117,8 @@ app.post("/", async (c) => {
         openclawVersion: data.openclawVersion ?? null,
         cloud: data.cloud ?? null,
         capabilities: data.capabilities,
+        privateIp: data.privateIp ?? null,
+        publicIp: data.publicIp ?? null,
         createdAt: now,
         updatedAt: now,
       })

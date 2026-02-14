@@ -37,14 +37,21 @@ app.post("/:id/heartbeat", async (c) => {
     const now = new Date();
 
     // Update agent with heartbeat data
+    const updateSet: Record<string, unknown> = {
+      lastHeartbeat: now,
+      status: data.status,
+      currentTaskId: data.currentTaskId,
+      updatedAt: now,
+    };
+
+    // Update privateIp if provided (keeps registry in sync if IP changes)
+    if (data.privateIp) {
+      updateSet.privateIp = data.privateIp;
+    }
+
     const result = await db
       .update(agents)
-      .set({
-        lastHeartbeat: now,
-        status: data.status,
-        currentTaskId: data.currentTaskId,
-        updatedAt: now,
-      })
+      .set(updateSet)
       .where(eq(agents.id, id))
       .returning({ id: agents.id });
 

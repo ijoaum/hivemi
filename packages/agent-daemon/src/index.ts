@@ -443,4 +443,5 @@ export type {
   P2PErrorCode,
 } from "./p2p-client.js";
 export type { P2PMessageCallback, P2PHandlerConfig } from "./p2p-handler.js";
+export { detectPrivateIp, detectPublicIp, isPrivateIp, getAllPrivateIps } from "./networking.js";
 export * from "./types.js";

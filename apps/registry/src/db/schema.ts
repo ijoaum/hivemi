@@ -135,6 +135,7 @@ export const agents = pgTable("agents", {
   cloud: jsonb("cloud").$type<AgentCloud | null>(),
   capabilities: jsonb("capabilities_list").$type<string[]>().notNull().default([]),
   privateIp: varchar("private_ip", { length: 45 }),
+  publicIp: varchar("public_ip", { length: 45 }),
   deployId: uuid("deploy_id").references(() => deploys.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

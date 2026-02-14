@@ -704,9 +704,18 @@ export default function AgentDetailPage() {
               {agent.privateIp && (
                 <div>
                   <p className="text-gray-500 flex items-center gap-1">
-                    <Server className="w-3.5 h-3.5" /> Private IP
+                    <Server className="w-3.5 h-3.5" /> Private IP (VPC)
                   </p>
                   <p className="text-white mt-0.5 font-mono text-xs">{agent.privateIp}</p>
+                </div>
+              )}
+              {/* Public IP */}
+              {agent.publicIp && (
+                <div>
+                  <p className="text-gray-500 flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5" /> Public IP
+                  </p>
+                  <p className="text-white mt-0.5 font-mono text-xs">{agent.publicIp}</p>
                 </div>
               )}
               {/* Instance size */}

@@ -40,6 +40,7 @@ export const AgentSchema = z.object({
   cloud: AgentCloudSchema.optional(),
   capabilities: z.array(z.string()).default([]),
   privateIp: z.string().max(45).nullable(),
+  publicIp: z.string().max(45).nullable(),
   deployId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
@@ -72,7 +73,7 @@ export const RegisterAgentSchema = z.object({
   teamId: z.string().uuid(),
   /** LLM model in use */
   model: z.string().min(1),
-  /** Public IP / hostname of the VM */
+  /** Public IP / hostname of the VM (prefers private IP when available) */
   host: z.string().min(1).max(255),
   /** Daemon port */
   port: z.number().int().min(1).max(65535),
@@ -88,6 +89,10 @@ export const RegisterAgentSchema = z.object({
   }).optional(),
   /** List of enabled skills/tools */
   capabilities: z.array(z.string()).default([]),
+  /** Private VPC IP (10.x.x.x, 172.16-31.x.x, 192.168.x.x) for inter-agent communication */
+  privateIp: z.string().max(45).optional(),
+  /** Public IP for external access / fallback communication */
+  publicIp: z.string().max(45).optional(),
 });
 export type RegisterAgent = z.infer<typeof RegisterAgentSchema>;
 
@@ -617,6 +622,8 @@ export const HeartbeatPayloadSchema = z.object({
   currentTaskId: z.string().uuid().nullable(),
   /** ISO 8601 timestamp from the daemon */
   timestamp: z.string().datetime(),
+  /** Private VPC IP — sent on heartbeat so registry stays up-to-date if IP changes */
+  privateIp: z.string().max(45).optional(),
 });
 export type HeartbeatPayload = z.infer<typeof HeartbeatPayloadSchema>;
 
