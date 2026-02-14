@@ -57,6 +57,10 @@ export interface InfraState {
   firewallId: string | null;
   /** Last known control plane IP */
   controlPlaneIp: string | null;
+  /** Additional authorized IPs for SSH access */
+  authorizedIps: string[];
+  /** VPC CIDR for internal communication (null to disable) */
+  vpcCidr: string | null;
   /** When the state was last updated */
   updatedAt: string | null;
 }
@@ -79,6 +83,10 @@ export interface InfraSetupResult {
   firewallCreated: boolean;
   /** Whether the control plane IP changed */
   ipChanged: boolean;
+  /** Current authorized IPs in the firewall */
+  authorizedIps: string[];
+  /** Current VPC CIDR in the firewall config */
+  vpcCidr: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +120,8 @@ export class InfraManager {
     sshPublicKey: null,
     firewallId: null,
     controlPlaneIp: null,
+    authorizedIps: [],
+    vpcCidr: "10.0.0.0/8",
     updatedAt: null,
   };
 
@@ -142,10 +152,22 @@ export class InfraManager {
     firewallName?: string;
     /** Reference path for private key storage (default: "hivemi-deploy-private-key") */
     privateKeyRef?: string;
+    /** Additional authorized IPs for SSH access */
+    authorizedIps?: string[];
+    /** VPC CIDR for internal communication (null to disable) */
+    vpcCidr?: string | null;
   }): Promise<InfraSetupResult> {
     const keyName = options?.keyName ?? "hivemi-deploy";
     const firewallName = options?.firewallName ?? "hivemi-agents";
     const privateKeyRef = options?.privateKeyRef ?? "hivemi-deploy-private-key";
+
+    // Apply authorized IPs and VPC config from options
+    if (options?.authorizedIps !== undefined) {
+      this.state.authorizedIps = options.authorizedIps;
+    }
+    if (options?.vpcCidr !== undefined) {
+      this.state.vpcCidr = options.vpcCidr;
+    }
 
     let keyGenerated = false;
     let firewallCreated = false;
@@ -215,8 +237,13 @@ export class InfraManager {
     this.state.controlPlaneIp = controlPlaneIp;
 
     // =====================================================================
-    // Step 4: Ensure firewall
+    // Step 4: Ensure firewall with VPC and authorized IPs
     // =====================================================================
+    const firewallOptions = {
+      authorizedIps: this.state.authorizedIps,
+      vpcCidr: this.state.vpcCidr,
+    };
+
     if (this.state.firewallId) {
       // Firewall already exists — restore it and check for IP change
       this.firewallManager.setFirewallId(this.state.firewallId);
@@ -231,6 +258,7 @@ export class InfraManager {
       const firewallId = await this.firewallManager.ensureFirewall(
         controlPlaneIp,
         firewallName,
+        firewallOptions,
       );
       this.state.firewallId = firewallId;
       firewallCreated = true;
@@ -249,6 +277,8 @@ export class InfraManager {
       keyGenerated,
       firewallCreated,
       ipChanged,
+      authorizedIps: this.state.authorizedIps,
+      vpcCidr: this.state.vpcCidr,
     };
   }
 
@@ -330,6 +360,8 @@ export class InfraManager {
       this.firewallManager.setFirewallId(state.firewallId);
     }
     if (state.controlPlaneIp) this.state.controlPlaneIp = state.controlPlaneIp;
+    if (state.authorizedIps) this.state.authorizedIps = state.authorizedIps;
+    if (state.vpcCidr !== undefined) this.state.vpcCidr = state.vpcCidr;
     if (state.updatedAt) this.state.updatedAt = state.updatedAt;
   }
 
@@ -345,5 +377,18 @@ export class InfraManager {
    */
   getFirewallManager(): FirewallManager {
     return this.firewallManager;
+  }
+
+  /**
+   * Update the authorized IPs for SSH access.
+   * Rebuilds firewall rules and applies them.
+   *
+   * @param authorizedIps - New list of authorized IPs
+   * @returns true if rules were updated
+   */
+  async updateAuthorizedIps(authorizedIps: string[]): Promise<boolean> {
+    this.state.authorizedIps = authorizedIps;
+    this.state.updatedAt = new Date().toISOString();
+    return this.firewallManager.updateAuthorizedIps(authorizedIps);
   }
 }

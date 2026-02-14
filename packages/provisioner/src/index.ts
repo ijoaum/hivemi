@@ -41,6 +41,16 @@ export { FirewallManager, createDefaultRules } from "./firewall.js";
 export { InfraManager } from "./infra-manager.js";
 export type { ISecretStore, InfraState, InfraSetupResult } from "./infra-manager.js";
 
+// Firewall Configuration
+export {
+  generateFirewallRules,
+  buildFirewallConfig,
+  normalizeCidr,
+  isValidCidr,
+  DEFAULT_FIREWALL_CONFIG,
+} from "./config.js";
+export type { FirewallConfig } from "./config.js";
+
 // SSH Key Generation
 export { generateSSHKeyPair, isValidSSHPublicKey } from "./ssh-keygen.js";
 export type { SSHKeyPair } from "./ssh-keygen.js";

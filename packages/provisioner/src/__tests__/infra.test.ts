@@ -320,10 +320,10 @@ describe("createDefaultRules (updated)", () => {
     expect(icmpInbound!.sources).toEqual(["0.0.0.0/0", "::/0"]);
   });
 
-  it("should have 3 inbound rules (SSH, daemon, ICMP)", () => {
+  it("should have 5 inbound rules (SSH, daemon, VPC TCP, VPC UDP, ICMP)", () => {
     const rules = createDefaultRules("10.0.0.1");
     const inbound = rules.filter((r) => r.direction === "inbound");
-    expect(inbound).toHaveLength(3);
+    expect(inbound).toHaveLength(5);
   });
 
   it("should have 3 outbound rules (TCP, UDP, ICMP)", () => {
