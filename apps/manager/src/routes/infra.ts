@@ -169,20 +169,72 @@ infraRoutes.get("/reconcile/history", async (c) => {
 });
 
 // =============================================================================
-// GET /costs — Cost estimation
+// GET /costs — Cost estimation with caching and per-agent breakdown
+// Issue #84: Cost Estimation: Completar e Expor
 // =============================================================================
+
+// In-memory cache for cost reports
+let _costCache: { data: any; cachedAt: number; expiresAt: number } | null = null;
+const COST_CACHE_TTL_MS = 60_000; // 1 minute
+
+function getCostCached(): any | null {
+  if (!_costCache) return null;
+  if (Date.now() > _costCache.expiresAt) {
+    _costCache = null;
+    return null;
+  }
+  return _costCache.data;
+}
+
+function setCostCache(data: any): void {
+  const now = Date.now();
+  _costCache = { data, cachedAt: now, expiresAt: now + COST_CACHE_TTL_MS };
+}
+
+/**
+ * Invalidate cost cache. Call when infra changes (deploy, destroy).
+ */
+export function invalidateManagerCostCache(): void {
+  _costCache = null;
+}
 
 infraRoutes.get("/costs", async (c) => {
   try {
+    // Check cache first
+    const cached = getCostCached();
+    if (cached) {
+      return c.json({ success: true, data: cached, cached: true });
+    }
+
     const provider = await getProvider();
 
     // List active instances
     const instances = await provider.listInstances(["hivemi"]);
 
-    const prov = await loadProvisioner();
-    const report = prov.generateCostReport(provider, instances);
+    // Get agents for mapping
+    const agentsResult = await registryClient.getAgents();
+    const agentMappings: Array<{ agentId: string; agentName: string; instanceId: string }> = [];
 
-    return c.json({ success: true, data: report });
+    if (agentsResult.success && agentsResult.data) {
+      for (const agent of agentsResult.data as any[]) {
+        const instanceId = agent.cloud?.instanceId;
+        if (instanceId) {
+          agentMappings.push({
+            agentId: agent.id,
+            agentName: agent.name,
+            instanceId,
+          });
+        }
+      }
+    }
+
+    const prov = await loadProvisioner();
+    const report = prov.generateCostReport(provider, instances, new Date(), agentMappings);
+
+    // Cache the result
+    setCostCache(report);
+
+    return c.json({ success: true, data: report, cached: false });
   } catch (err) {
     logger.error(err, "Cost estimation failed");
     return c.json(
@@ -203,6 +255,8 @@ infraRoutes.delete("/reconcile/orphan/:instanceId", async (c) => {
 
     logger.warn({ instanceId }, "Destroying orphaned instance");
     await provider.destroyInstance(instanceId);
+
+    invalidateManagerCostCache(); // Infra changed — invalidate cost cache
 
     return c.json({
       success: true,

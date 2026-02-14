@@ -18,6 +18,7 @@ import taskQueueRoutes from "./routes/tasks.js";
 import discoveryRoutes from "./routes/discovery.js";
 import logRoutes from "./routes/logs.js";
 import reconcileRoutes from "./routes/reconcile.js";
+import costRoutes from "./routes/costs.js";
 
 const app = new Hono();
 
@@ -464,5 +465,11 @@ app.route("/api/deploys", deployRoutes);
 // =============================================================================
 
 app.route("/api/infra/reconcile", reconcileRoutes);
+
+// =============================================================================
+// COSTS (Issue #84)
+// =============================================================================
+
+app.route("/api/infra/costs", costRoutes);
 
 export default app;

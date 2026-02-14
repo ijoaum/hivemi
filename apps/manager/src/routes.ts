@@ -13,6 +13,7 @@ import { DeployOrchestrator } from "./lib/deploy-orchestrator.js";
 import { createDeployRoutes } from "./routes/deploy.js";
 import taskRoutes from "./routes/tasks.js";
 import infraRoutes from "./routes/infra.js";
+import { invalidateManagerCostCache } from "./routes/infra.js";
 
 const app = new Hono();
 
@@ -234,6 +235,7 @@ app.delete("/api/deploy/:id", async (c) => {
     const orch = await getOrchestrator();
     const id = c.req.param("id");
     await orch.undeploy(id);
+    invalidateManagerCostCache(); // Infra changed — invalidate cost cache
     return c.json({ success: true, data: { message: "Deploy destroyed successfully" } });
   } catch (err) {
     return c.json({ success: false, error: (err as Error).message }, 500);
@@ -258,6 +260,7 @@ app.post("/api/deploy/:id/redeploy", async (c) => {
       name, roleId, teamId, model, cloudProvider, region, instanceSize,
     });
 
+    invalidateManagerCostCache(); // Infra changed — invalidate cost cache
     return c.json({ success: true, data: { ...result, message: "Redeploy initiated" } }, 202);
   } catch (err) {
     return c.json({ success: false, error: (err as Error).message }, 500);
