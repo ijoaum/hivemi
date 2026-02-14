@@ -1,5 +1,116 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #83: Reconciliation: Completar Lógica e Endpoint
+
+### Summary
+Completed the reconciliation system by adding a periodic job in the Registry that compares cloud VMs (tagged `hivemi`) with registered agents, detects orphaned VMs and phantom agents, validates IP matches, auto-fixes phantom agents by marking them offline, logs detailed results, and sends webhook notifications. Exposed via REST endpoints in both Registry and Manager, with Dashboard proxy routes and API client extensions.
+
+### What was done
+
+1. **Reconciliation Job** (`apps/registry/src/lib/reconciliation-job.ts`):
+   - `runReconciliation()` — main function that orchestrates the full reconciliation cycle
+   - Loads cloud config from DB, creates cloud provider via dynamic import
+   - Lists VMs with `hivemi` tag from the cloud provider
+   - Maps DB agents to `RegistryAgent` shape for the provisioner
+   - Calls `generateReconciliationReport()` from `@hivemi/provisioner`
+   - **Auto-fix**: marks phantom agents as `offline` in DB (configurable via `autoFixPhantoms`)
+   - **Logging**: writes structured log entries to the `logs` table with component `reconciliation-job`
+   - **Notifications**: sends webhook alerts for `warning`/`critical` status
+   - Concurrent execution guard (skips if already running)
+   - `startReconciliationJob()` / `stopReconciliationJob()` lifecycle functions
+   - 30s startup delay, then runs every `intervalMs` (default: 1 hour)
+   - `getLastReconciliationResult()` returns cached result for the status API
+
+2. **Registry Reconciliation Routes** (`apps/registry/src/routes/reconcile.ts`):
+   - `GET /api/infra/reconcile` — returns last periodic reconciliation result
+   - `POST /api/infra/reconcile` — triggers immediate reconciliation with optional `autoFix` and `tag` params
+   - `GET /api/infra/reconcile/history` — returns reconciliation log entries (limit param)
+
+3. **Registry Startup** (`apps/registry/src/index.ts`):
+   - Added `startReconciliationJob()` call on server start
+   - Three env vars: `RECONCILIATION_INTERVAL_MS`, `RECONCILIATION_AUTO_FIX`, `RECONCILIATION_WEBHOOK_URL`
+
+4. **Manager Infra Routes** (`apps/manager/src/routes/infra.ts`):
+   - Enhanced `GET /reconcile` — existing endpoint (runs live reconciliation via cloud provider)
+   - Added `POST /reconcile` — trigger with `autoFix` option, marks phantom agents via `registryClient.updateAgent()`
+   - Added `GET /reconcile/status` — proxies to Registry's periodic job result
+   - Added `GET /reconcile/history` — proxies to Registry's log history
+
+5. **Manager RegistryClient** (`apps/manager/src/lib/registry-client.ts`):
+   - `getReconciliationStatus()` — GET /api/infra/reconcile
+   - `triggerReconciliation(options)` — POST /api/infra/reconcile
+   - `getReconciliationHistory(limit)` — GET /api/infra/reconcile/history
+
+6. **Dashboard Proxy Routes**:
+   - `apps/dashboard/src/app/api/infra/reconcile/trigger/route.ts` — POST proxy
+   - `apps/dashboard/src/app/api/infra/reconcile/status/route.ts` — GET proxy
+   - `apps/dashboard/src/app/api/infra/reconcile/history/route.ts` — GET proxy
+
+7. **Dashboard API Client** (`apps/dashboard/src/lib/api.ts`):
+   - `infraApi.triggerReconcile(options)` — POST /api/infra/reconcile/trigger
+   - `infraApi.reconcileStatus()` — GET /api/infra/reconcile/status
+   - `infraApi.reconcileHistory(limit)` — GET /api/infra/reconcile/history
+
+8. **55 new tests** (`apps/registry/src/__tests__/reconciliation.test.ts`):
+   - Configuration (4): interval, env vars, auto-fix toggle, webhook URL
+   - Report shape (5): clean, warning, orphan issues, phantom issues, totalVMs math
+   - Job result (4): success, skipped, already running, error
+   - Auto-fix (4): count tracking, targets only phantoms, marks offline, skips offline/destroyed
+   - IP validation (5): mismatch detection, matching IPs, localhost, port handling, VPC
+   - Notifications (4): warning, critical, clean skip, issue details
+   - Logging (4): message format, auto-fixed omission, level mapping, component
+   - API endpoints (6): GET/POST reconcile, status, history, destroy orphan
+   - Dashboard API client (3): methods, POST body, history limit
+   - Agent mapping (3): full cloud, no cloud, empty instanceId
+   - Periodic job (4): concurrency guard, error recovery, startup delay, interval
+   - RegistryClient methods (3): endpoint paths, POST options, history limit
+   - Edge cases (6): empty agents, no VMs, all phantoms, all orphans, local agents, mixed
+
+### Key Decisions
+- **Job lives in Registry, not Manager** — the Registry has direct DB access for both reading agents and writing auto-fix updates. The Manager proxies to Registry for job status and delegates live reconciliation through the provisioner.
+- **30s startup delay** — avoids hammering the cloud API immediately on server start. Gives time for cloud config to be loaded and other services to initialize.
+- **Auto-fix defaults to ON** — phantom agents (VM deleted but agent still in registry with active status) are misleading. Marking them offline is safe and prevents false dashboard counts. Can be disabled via `RECONCILIATION_AUTO_FIX=false`.
+- **Webhook for notifications** — simple, universal approach. Works with Slack, Discord, generic webhooks. More complex notification channels can be added later.
+- **Dual API: Registry + Manager** — Registry handles periodic job results and history. Manager handles live reconciliation (needs cloud provider). Dashboard can call either depending on needs.
+- **Logs table for audit trail** — reconciliation results stored as structured log entries with metadata. Query via `/history` endpoint or directly in the logs UI.
+
+### Acceptance Criteria
+- [x] Reconciliação compara VMs vs agentes corretamente (via `@hivemi/provisioner` reconcile)
+- [x] VMs órfãs detectadas e alertadas (orphaned_vm issues in report)
+- [x] Agentes fantasma marcados como offline (auto-fix in DB)
+- [x] Validação de IP funcionando (detectIPMismatches from provisioner)
+- [x] Endpoint GET /api/infra/reconcile retorna relatório (both Registry and Manager)
+- [x] Job periódico executando a cada 1h (startReconciliationJob with setInterval)
+- [x] Logs detalhados sendo gerados (structured log entries in logs table)
+- [x] Notificações enviadas quando há problemas (webhook for warning/critical)
+- [x] Dashboard pode exibir status de reconciliação (infraApi.reconcileStatus + history)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/registry/src/lib/reconciliation-job.ts` | NEW — periodic reconciliation job |
+| `apps/registry/src/routes/reconcile.ts` | NEW — Registry reconciliation endpoints |
+| `apps/registry/src/routes.ts` | Mount reconcileRoutes at /api/infra/reconcile |
+| `apps/registry/src/index.ts` | Start reconciliation job + env config |
+| `apps/manager/src/routes/infra.ts` | Enhanced — POST reconcile, status, history |
+| `apps/manager/src/lib/registry-client.ts` | +reconciliation methods |
+| `apps/dashboard/src/lib/api.ts` | +triggerReconcile, reconcileStatus, reconcileHistory |
+| `apps/dashboard/src/app/api/infra/reconcile/trigger/route.ts` | NEW — POST proxy |
+| `apps/dashboard/src/app/api/infra/reconcile/status/route.ts` | NEW — GET proxy |
+| `apps/dashboard/src/app/api/infra/reconcile/history/route.ts` | NEW — GET proxy |
+| `apps/registry/src/__tests__/reconciliation.test.ts` | NEW — 55 tests |
+
+### Commits
+- `a6c1a76` — feat(registry): reconciliation job and API — periodic VM/agent drift detection, auto-fix, notifications (#83)
+
+### Next
+- Dashboard reconciliation status card/page
+- Manual "destroy orphan" button in Dashboard with confirmation
+- Rate limiting on POST /reconcile (prevent spam)
+- Integration test with mock cloud provider
+
+---
+
 ## 2026-02-15 — Issue #82: Agent Registration: IP Privado
 
 ### Summary
