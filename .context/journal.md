@@ -1,5 +1,114 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #84: Cost Estimation: Completar e Expor
+
+### Summary
+Completed the cost estimation system by creating pricing tables per provider, adding agent-to-instance mapping in cost breakdowns, implementing in-memory caching with TTL and invalidation hooks, exposing a dedicated Registry cost endpoint, enhancing the Manager cost endpoint, and updating the Dashboard to show agent names. 46 new tests covering pricing, caching, projections, agent mappings, multi-provider support, and edge cases.
+
+### What was done
+
+1. **Pricing Tables** (`packages/provisioner/src/pricing/index.ts`):
+   - `DIGITALOCEAN_PRICING`: small ($6), medium ($12), large ($24)
+   - `GCP_PRICING`: small ($7), medium ($13), large ($25)
+   - `PROVIDER_PRICING`: indexed lookup by provider name
+   - `getPricingForProvider(name)`: case-insensitive lookup with error on unknown
+   - `getMonthlyCost(provider, size)`: convenience function
+   - `listProviders()`: returns all supported providers
+
+2. **Enhanced `cost.ts`** (`packages/provisioner/src/cost.ts`):
+   - `AgentInstanceMapping` type: maps agentId/agentName to instanceId
+   - `generateCostReport()` now accepts optional `agentMappings` parameter
+   - Breakdown items enriched with `agentId` and `agentName` when mapping exists
+   - **Cache module**: `getCachedCostReport()`, `setCostCache(report, ttlMs)`, `invalidateCostCache()`, `getCostCacheInfo()`
+   - Default cache TTL: 60 seconds
+   - `CachedCostReport` type for cache metadata
+
+3. **Updated `InstanceCostBreakdown` type** (`packages/provisioner/src/types.ts`):
+   - Added optional `agentId: string` and `agentName: string` fields
+
+4. **Registry Cost Route** (`apps/registry/src/routes/costs.ts`):
+   - `GET /api/infra/costs` endpoint with in-memory cache (60s TTL)
+   - Loads cloud config, creates provider, lists instances, fetches agents from DB
+   - Builds agent-to-instance mappings from `agents.cloud.instanceId`
+   - Returns `CostReport` with per-agent breakdown
+   - `invalidateCostCache()` exported for external invalidation
+   - Response includes `cached: boolean` field
+
+5. **Enhanced Manager `/costs`** (`apps/manager/src/routes/infra.ts`):
+   - Added in-memory cache (60s TTL) with `getCostCached()` / `setCostCache()`
+   - Fetches agents from Registry for agent-to-instance mapping
+   - Passes `agentMappings` to `generateCostReport()`
+   - `invalidateManagerCostCache()` exported and called from:
+     - `DELETE /api/deploy/:id` (undeploy)
+     - `POST /api/deploy/:id/redeploy` (redeploy)
+     - `DELETE /api/infra/reconcile/orphan/:instanceId` (destroy orphan)
+
+6. **Dashboard Updates**:
+   - `InstanceCostBreakdown` type: added `agentId?` and `agentName?` fields
+   - `MonthlyCostCard`: shows `agentName` in breakdown tooltip (falls back to VM name)
+
+7. **Provisioner Exports** (`packages/provisioner/src/index.ts`):
+   - Exports: cache functions, `AgentInstanceMapping`, `CachedCostReport` types
+   - Exports: all pricing table functions and constants
+
+8. **46 new tests** (`packages/provisioner/src/__tests__/cost-estimation.test.ts`):
+   - **Pricing Tables (10)**: DO/GCP values, PROVIDER_PRICING, getPricingForProvider, case-insensitive, unknown throws, getMonthlyCost, listProviders
+   - **Agent Mappings (5)**: enrichment, no mappings, partial mappings, undefined, backward compat
+   - **Multi-provider (3)**: DO costs, GCP costs, GCP > DO comparison
+   - **Instance Sizes (4)**: small/medium/large individual, mixed report
+   - **Cost Cache (7)**: empty, store/retrieve, invalidate, TTL expiry, cache info states
+   - **Projections (5)**: end of month, mid-month, daily fraction, zero fraction, empty
+   - **Accumulated (3)**: full month, mid-month, just created
+   - **Response Shape (5)**: required fields, agent info, ISO timestamp, monthly sum, accumulated sum
+   - **Edge Cases (4)**: string dates, future VM, 100 instances, single instance
+
+### Key Decisions
+- **Dual cache (Registry + Manager)** — each service caches independently since they have different data sources. Registry reads from DB directly; Manager proxies through Registry. Both use 60s TTL.
+- **Cache invalidation on infra changes** — rather than time-based only, deploy/destroy/redeploy actions actively invalidate the cache for immediate accuracy.
+- **Agent mappings via `cloud.instanceId`** — the agents table stores cloud info (provider, region, instanceId) as JSON. We use instanceId to join instances to agents for the breakdown.
+- **Pricing tables separate from providers** — `pricing/index.ts` provides static lookup tables independent of live provider instances. Useful for estimation without API calls.
+- **Backward compatible** — `generateCostReport()` still works without `agentMappings` parameter. Existing consumers unaffected.
+- **Registry + Manager both serve costs** — Registry has direct DB access for agent mappings. Manager delegates to cloud provider for live instance data. Dashboard proxy goes through Manager (consistent with other infra endpoints).
+
+### Acceptance Criteria
+- [x] Custo mensal calculado corretamente por instância
+- [x] Custo projetado estimado até fim do mês
+- [x] Custo acumulado desde deploy calculado
+- [x] Suporte para diferentes tamanhos de instância (small/medium/large)
+- [x] Suporte para DigitalOcean e GCP (pricing tables + provider support)
+- [x] Endpoint GET /api/infra/costs retorna breakdown (Registry + Manager)
+- [x] Total geral incluído na resposta (monthly, projected, accumulated)
+- [x] Cache implementado e funcionando (60s TTL + invalidation)
+- [x] Dashboard pode consumir e exibir os dados (MonthlyCostCard + agent names)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/provisioner/src/pricing/index.ts` | NEW — DO/GCP pricing tables |
+| `packages/provisioner/src/cost.ts` | Enhanced — cache, agent mappings |
+| `packages/provisioner/src/types.ts` | +agentId, +agentName on InstanceCostBreakdown |
+| `packages/provisioner/src/index.ts` | +cache, +pricing, +mapping exports |
+| `apps/registry/src/routes/costs.ts` | NEW — GET /api/infra/costs with cache |
+| `apps/registry/src/routes.ts` | Mount costRoutes at /api/infra/costs |
+| `apps/manager/src/routes/infra.ts` | Enhanced — cache + agent mappings in /costs |
+| `apps/manager/src/routes.ts` | +invalidateManagerCostCache on deploy/destroy |
+| `apps/dashboard/src/lib/api.ts` | +agentId, +agentName on InstanceCostBreakdown |
+| `apps/dashboard/src/components/monthly-cost-card.tsx` | Show agent names in breakdown |
+| `packages/provisioner/src/__tests__/cost-estimation.test.ts` | NEW — 46 tests |
+
+### Commits
+- `a5a850e` — feat(provisioner): complete cost estimation with pricing tables, caching, and agent mappings (#84)
+- `cc92642` — feat(registry,manager): expose GET /api/infra/costs with caching and agent breakdown (#84)
+- `f288abd` — feat(dashboard): show agent names in cost breakdown card (#84)
+
+### Next
+- Dashboard: dedicated cost/billing page with charts and history
+- Cost alerts (threshold-based notifications)
+- Historical cost tracking (store daily snapshots)
+- Multi-provider mixed deployment costs (agents on different providers)
+
+---
+
 ## 2026-02-15 — Issue #83: Reconciliation: Completar Lógica e Endpoint
 
 ### Summary
