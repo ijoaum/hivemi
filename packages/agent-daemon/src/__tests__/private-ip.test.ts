@@ -314,7 +314,8 @@ describe("RegistryClient — Private IP in Heartbeat", () => {
     const client = new RegistryClient(config, silentLogger);
     // Heartbeat without register — no cached IPs
     const result = await client.heartbeat("idle", null);
-    expect(result).toBe(true);
+    expect(result.ack).toBe(true);
+    expect(result.cancelTask).toBeNull();
   });
 
   it("heartbeat includes currentTaskId when working", async () => {
