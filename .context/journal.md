@@ -1,5 +1,68 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #88: Registry Task Progress Endpoints
+
+### Summary
+Created REST endpoints for storing and retrieving granular task progress (checkpoints/steps), using the existing `task_progress` table. Agents can now report step-by-step progress as they execute tasks, and the dashboard (or other consumers) can query the progress timeline.
+
+### What was done
+
+1. **Protocol Schema** (`packages/protocol/src/types.ts`):
+   - Added `CreateTaskProgressSchema` — validates `step` (1-1000 chars), `timestamp` (coerced Date), `toolCall` (optional, max 50 chars)
+   - Exported `CreateTaskProgress` type
+
+2. **DB Schema** (`apps/registry/src/db/schema.ts`):
+   - Upgraded `task_progress` index from single-column `(task_id)` to composite `(task_id, timestamp)` for query performance (GET endpoint orders by timestamp)
+
+3. **Progress Routes** (`apps/registry/src/routes/progress.ts`):
+   - `POST /:id/progress` — Add a progress step to a task
+     - Validates body with `CreateTaskProgressSchema`
+     - Verifies task exists (404 if not)
+     - Inserts into `task_progress` table
+     - Returns 201 with created record
+   - `GET /:id/progress` — List progress steps for a task
+     - Verifies task exists (404 if not)
+     - Returns steps ordered by timestamp ASC
+     - Pagination: `limit` (default 100, max 500) and `offset` (default 0)
+     - Returns `{ success, data, pagination: { limit, offset, count } }`
+
+4. **Route Wiring** (`apps/registry/src/routes.ts`):
+   - Imported and mounted `taskProgressRoutes` at `/api/tasks`
+
+5. **Tests** (`apps/registry/src/__tests__/task-progress.test.ts`):
+   - 31 tests covering:
+     - `CreateTaskProgressSchema` validation (full/minimal payloads, boundaries, type coercion)
+     - `TaskProgressSchema` validation (full records, null toolCall, missing fields)
+     - Pagination logic (defaults, caps, edge cases, negative values)
+
+### Key Decisions
+- **Composite index `(task_id, timestamp)`** instead of just `(task_id)` — the GET endpoint always filters by task_id and orders by timestamp, so the composite index covers both operations efficiently.
+- **Pagination with limit/offset** — Simple and sufficient for progress steps. The count in pagination is the result count (not total), keeping the query light (no extra COUNT query).
+- **toolCall stored as null when not provided** — Matches the DB schema (nullable varchar). The Create schema makes it optional; the route normalizes `undefined` → `null` before insert.
+- **No authentication on these routes beyond the existing `authMiddleware`** — The progress routes are mounted under `/api/tasks` which already has Bearer token auth via the `authMiddleware` applied to all `/api/*` routes.
+
+### Acceptance Criteria
+- [x] POST /api/tasks/:id/progress accepts and stores steps
+- [x] GET /api/tasks/:id/progress returns ordered list
+- [x] Fields step, timestamp, toolCall stored correctly
+- [x] TaskId validation implemented (404 if not found)
+- [x] Pagination functional (limit/offset)
+- [x] Composite index added for performance (task_id, timestamp)
+- [x] 31 tests passing
+- [x] Journal updated
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | Added `CreateTaskProgressSchema` and `CreateTaskProgress` type |
+| `apps/registry/src/db/schema.ts` | Upgraded `task_progress` index to composite `(task_id, timestamp)` |
+| `apps/registry/src/routes/progress.ts` | New file — POST and GET progress endpoints |
+| `apps/registry/src/routes.ts` | Import and mount progress routes |
+| `apps/registry/src/__tests__/task-progress.test.ts` | New file — 31 tests |
+
+### Commits
+- `530e468` — feat(registry): task progress endpoints — POST & GET /api/tasks/:id/progress (#88)
+
 ## 2026-02-15 — Issue #87: Dashboard Cancel Button on Tasks
 
 ### Summary
