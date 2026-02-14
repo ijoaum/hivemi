@@ -1,5 +1,116 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #91: Bootstrapper — Config OpenClaw Gateway
+
+### Summary
+Enhanced the bootstrapper's OpenClaw configuration phase to generate a complete gateway config with system prompt (role, tools, instructions), security settings (timeouts, rate limits, max concurrent requests), config validation, and post-write verification. Created a dedicated `openclaw-config.ts` module with config generator, system prompt builder, validator, and role-based tool resolution. 62 new tests.
+
+### What was done
+
+1. **OpenClaw Config Module** (`packages/bootstrapper/src/openclaw-config.ts`):
+   - `generateOpenClawConfig(options)` — generates the full OpenClaw gateway config object
+     - LLM: model + maxTokens
+     - Gateway: chatCompletions enabled, auth token
+     - Sandbox: off (agents need full access)
+     - Security: requestTimeoutSeconds (300), maxConcurrentRequests (1), rateLimitPerMinute (30), toolTimeoutSeconds (120), allowElevated (false)
+   - `buildSystemPrompt(options)` — builds SOUL.md for the agent with:
+     - Base system prompt (role's SOUL.md content)
+     - Agent Identity block (name, ID, role, team, model)
+     - Available Tools section (from role or explicit list)
+     - Custom instructions section (if provided)
+     - Standard Agent Rules (always appended)
+   - `validateOpenClawConfig(config)` — validates the generated config:
+     - Required fields: model, chatCompletions enabled, sandbox off
+     - Security value ranges (timeout 10-3600, concurrent 1-10, rate 1-600, toolTimeout 5-1800, maxTokens 256-200000)
+     - Warning for missing auth token
+     - Returns `{ valid, errors, warnings }`
+   - `getToolsForRole(roleName)` — resolves default tools per role:
+     - developer/dev/engineer → full worker tools
+     - qa/tester → worker tools + browser
+     - pm/manager → read, write, web_search, web_fetch (no exec)
+     - executor/runner → exec, read, write, edit (restricted)
+     - default → full worker tools
+   - `logConfigSummary(config, promptLength, logger)` — logs all config fields safely (no secrets)
+
+2. **SecurityConfig type** with defaults:
+   - `maxTokens: 32768` — tokens per request
+   - `requestTimeoutSeconds: 300` — 5 min request timeout
+   - `maxConcurrentRequests: 1` — one task at a time
+   - `rateLimitPerMinute: 30` — prevent runaway loops
+   - `sandboxMode: "off"` — agents need full tool access
+   - `allowElevated: false` — no elevated ops by default
+   - `toolTimeoutSeconds: 120` — 2 min tool execution limit
+
+3. **Tool Sets**:
+   - `DEFAULT_WORKER_TOOLS`: exec, read, write, edit, web_search, web_fetch, browser
+   - `DEFAULT_EXECUTOR_TOOLS`: exec, read, write, edit (restricted, no web/browser)
+
+4. **Enhanced `configureOpenClaw` phase** (`packages/bootstrapper/src/phases/configure.ts`):
+   - Accepts optional `ConfigureOpenClawOptions` (roleName, tools, instructions, security)
+   - Builds system prompt via `buildSystemPrompt()` instead of raw SOUL.md write
+   - Generates config via `generateOpenClawConfig()` with security settings
+   - Validates config and throws with descriptive error on failure
+   - Post-write verification: reads file size via SSH to confirm write succeeded
+   - Detailed logging throughout (config summary without secrets)
+   - Backward compatible: new `options` parameter is optional
+
+5. **JSON Template** (`packages/bootstrapper/src/templates/openclaw.json`):
+   - Template with placeholder variables (`{{MODEL}}`, `{{API_TOKEN}}`)
+   - Documents the expected config structure for reference
+
+6. **62 new tests** (`packages/bootstrapper/src/__tests__/openclaw-config.test.ts`):
+   - **generateOpenClawConfig (10)**: model, chatCompletions, sandbox, auth token, security defaults, custom overrides, maxTokens, JSON serialization, sandbox override
+   - **buildSystemPrompt (11)**: base content, agent identity, tools section, agent rules, instructions, explicit tools, role name, default role, empty prompt, undefined prompt, tool guidance
+   - **getToolsForRole (10)**: default, undefined, executor, runner, developer, pm, qa, case-insensitive, whitespace, unknown
+   - **validateOpenClawConfig (14)**: valid config, missing model, disabled chatCompletions, wrong sandbox, no auth warning, auth present, timeout ranges, concurrent ranges, rate limit ranges, tool timeout ranges, maxTokens ranges, undefined maxTokens, no security block, multiple errors
+   - **DEFAULT_SECURITY (2)**: sensible defaults, defaults pass validation
+   - **Tool sets (3)**: worker tools content, executor tools restricted, executor subset of worker
+   - **logConfigSummary (4)**: logs key fields, security settings, auth configured, auth none
+   - **Integration (5)**: developer valid, qa valid, pm valid, executor valid, all overrides valid, round-trip preserves structure
+
+7. **Updated existing tests** (`bootstrapper.test.ts`):
+   - `configureOpenClaw` tests updated for new behavior: system prompt with identity block, security settings in config, verification call, validation failure test
+
+### Key Decisions
+- **Dedicated module** (`openclaw-config.ts`) — separates config generation logic from SSH execution. Clean to test, easy to reuse if other services need to generate configs.
+- **Validation before write** — catches misconfigurations early. Prevents deploying agents with broken configs that would fail silently at runtime.
+- **Post-write verification** — reads file size via SSH after writing. Catches corrupted writes (SSH connection issues, disk full, etc.) before proceeding.
+- **Role-based tool defaults** — PM agents don't need `exec`, QA agents need `browser`. Principle of least privilege while still being useful.
+- **maxConcurrentRequests: 1** — agents process one task at a time from the queue. This is by design: the daemon picks one task, executes, reports, picks next. Setting it to 1 prevents accidental parallel execution.
+- **Backward compatible** — the new `options` parameter on `configureOpenClaw` is optional. Existing callers (deploy orchestrator) continue to work without changes.
+
+### Acceptance Criteria
+- [x] Fase de configuração adicionada ao bootstrapper (enhanced configureOpenClaw + openclaw-config.ts)
+- [x] openclaw.json criado no agente (written as config.yaml via SSH)
+- [x] chatCompletions habilitado
+- [x] sandbox desabilitado
+- [x] System prompt configurado com role e tools
+- [x] Configurações de segurança aplicadas (timeout, rate limits, max concurrent, tool timeout)
+- [x] Validação de arquivo bem-sucedida (validateOpenClawConfig + post-write size check)
+- [x] Logs de configuração gerados (logConfigSummary + phase logging)
+- [x] Agente pode executar chat completions após deploy (config enables endpoint)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/bootstrapper/src/openclaw-config.ts` | NEW — config generator, system prompt builder, validator, tool resolver |
+| `packages/bootstrapper/src/templates/openclaw.json` | NEW — JSON config template with placeholders |
+| `packages/bootstrapper/src/phases/configure.ts` | Enhanced configureOpenClaw with validation, verification, logging |
+| `packages/bootstrapper/src/index.ts` | Export new types and functions |
+| `packages/bootstrapper/src/__tests__/openclaw-config.test.ts` | NEW — 62 tests |
+| `packages/bootstrapper/src/__tests__/bootstrapper.test.ts` | Updated configureOpenClaw tests |
+
+### Commits
+- `43996b9` — feat(bootstrapper): config OpenClaw gateway — system prompt, security, validation, role tools (#91)
+
+### Next
+- Wire `ConfigureOpenClawOptions` into DeployOrchestrator (pass role name from registry)
+- Add AGENTS.md and TOOLS.md generation based on role config
+- Implement config hot-reload for running agents (update config without redeploy)
+- Add per-role security overrides (some roles may need elevated access)
+
+---
+
 ## 2026-02-15 — Issue #90: Dashboard — Timeline de Steps na Task
 
 ### Summary
