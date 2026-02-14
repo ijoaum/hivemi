@@ -393,4 +393,100 @@ app.post("/requeue", async (c) => {
   }
 });
 
+// =============================================================================
+// PUT /:id/cancel — Mark a locked task as "cancelling"
+//
+// Issue #85: Task cancellation via heartbeat.
+// When a task is locked (being executed by an agent), this endpoint marks it
+// as "cancelling". The next heartbeat response will include the cancelTask
+// field, signaling the daemon to kill the OpenClaw process.
+//
+// Status transitions:
+//   queued     → cancelled (immediate, no daemon involvement needed)
+//   locked     → cancelling (daemon will handle via heartbeat)
+//   cancelling → 409 (already cancelling, idempotent-ish)
+//   completed  → 409 (can't cancel a completed task)
+//   failed     → 409 (can't cancel a failed task)
+//   cancelled  → 409 (already cancelled)
+//
+// After the daemon confirms the kill, it reports the task via
+// PUT /api/tasks/:id/complete with status=failed and error="cancelled".
+// The Registry then sets the final status to "cancelled".
+// =============================================================================
+
+app.put("/:id/cancel", async (c) => {
+  const taskId = c.req.param("id");
+
+  try {
+    // Get current task state
+    const existing = await db
+      .select({
+        id: tasks.id,
+        status: tasks.status,
+        lockedBy: tasks.lockedBy,
+      })
+      .from(tasks)
+      .where(eq(tasks.id, taskId));
+
+    if (existing.length === 0) {
+      return c.json({ success: false, error: "Task not found" }, 404);
+    }
+
+    const task = existing[0];
+
+    // Terminal states — cannot cancel
+    if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+      return c.json(
+        { success: false, error: `Cannot cancel task with status "${task.status}"` },
+        409,
+      );
+    }
+
+    // Already cancelling — idempotent
+    if (task.status === "cancelling") {
+      logger.info({ taskId }, "Task already in cancelling state");
+      return c.json({
+        success: true,
+        data: { id: taskId, status: "cancelling" },
+        message: "Task is already cancelling",
+      });
+    }
+
+    if (task.status === "locked") {
+      // Task is being executed — mark as cancelling
+      // Daemon will pick this up in the next heartbeat cycle
+      const updated = await db
+        .update(tasks)
+        .set({ status: "cancelling" })
+        .where(eq(tasks.id, taskId))
+        .returning();
+
+      logger.info(
+        { taskId, lockedBy: task.lockedBy },
+        "Task marked as cancelling — daemon will be notified via heartbeat",
+      );
+
+      return c.json({ success: true, data: updated[0] });
+    }
+
+    // Queued or any other non-active state — cancel immediately
+    const updated = await db
+      .update(tasks)
+      .set({
+        status: "cancelled",
+        completedAt: new Date(),
+        lockedBy: null,
+        lockedAt: null,
+      })
+      .where(eq(tasks.id, taskId))
+      .returning();
+
+    logger.info({ taskId }, "Task cancelled immediately (was not locked)");
+    return c.json({ success: true, data: updated[0] });
+  } catch (error) {
+    logger.error(error, "Failed to cancel task");
+    return c.json({ success: false, error: "Failed to cancel task" }, 500);
+  }
+});
+
 export default app;

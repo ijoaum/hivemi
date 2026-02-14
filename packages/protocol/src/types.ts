@@ -629,9 +629,16 @@ export type HeartbeatPayload = z.infer<typeof HeartbeatPayloadSchema>;
 
 /**
  * Response from POST /api/agents/:id/heartbeat.
+ *
+ * When a task assigned to this agent has been marked as "cancelling"
+ * (via PUT /api/tasks/:id/cancel), the response includes `cancelTask`
+ * with the task ID. The daemon should kill the running OpenClaw process
+ * and report the task as cancelled.
  */
 export const HeartbeatResponseSchema = z.object({
   ack: z.boolean(),
+  /** Task ID to cancel — present when the agent's current task is marked as cancelling */
+  cancelTask: z.string().uuid().nullable().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponseSchema>;
 

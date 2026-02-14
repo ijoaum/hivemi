@@ -396,9 +396,49 @@ app.post("/api/tasks/:id/retry", async (c) => {
   }
 });
 
+// Issue #85: Smart cancel — if the task is locked (being executed), set to
+// "cancelling" so the heartbeat can signal the daemon to kill the process.
+// If the task is queued or in another non-active state, cancel immediately.
 app.post("/api/tasks/:id/cancel", async (c) => {
   try {
     const id = c.req.param("id");
+
+    // First, check the task's current status
+    const existing = await db.select({ status: tasks.status, lockedBy: tasks.lockedBy }).from(tasks).where(eq(tasks.id, id));
+    if (existing.length === 0) {
+      return c.json({ success: false, error: "Task not found" }, 404);
+    }
+
+    const task = existing[0];
+
+    // Already in a terminal state
+    if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+      return c.json(
+        { success: false, error: `Cannot cancel task with status "${task.status}"` },
+        409,
+      );
+    }
+
+    // Already cancelling — idempotent
+    if (task.status === "cancelling") {
+      return c.json({ success: true, data: { id, status: "cancelling" }, message: "Task is already cancelling" });
+    }
+
+    if (task.status === "locked") {
+      // Task is being executed by a daemon — mark as "cancelling"
+      // The daemon will detect this in the next heartbeat and kill the process
+      const result = await db.update(tasks)
+        .set({
+          status: "cancelling",
+        })
+        .where(eq(tasks.id, id))
+        .returning();
+
+      logger.info({ taskId: id, lockedBy: task.lockedBy }, "Task marked as cancelling — waiting for daemon to kill process");
+      return c.json({ success: true, data: result[0] });
+    }
+
+    // Task is queued or in another non-active state — cancel immediately
     const result = await db.update(tasks)
       .set({
         status: "cancelled",
@@ -409,10 +449,8 @@ app.post("/api/tasks/:id/cancel", async (c) => {
       })
       .where(eq(tasks.id, id))
       .returning();
-    if (result.length === 0) {
-      return c.json({ success: false, error: "Task not found" }, 404);
-    }
-    logger.info({ taskId: id }, "Task cancelled");
+
+    logger.info({ taskId: id }, "Task cancelled immediately (was not being executed)");
     return c.json({ success: true, data: result[0] });
   } catch (error) {
     logger.error(error, "Failed to cancel task");

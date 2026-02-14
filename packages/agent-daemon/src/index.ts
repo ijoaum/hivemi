@@ -46,6 +46,9 @@ export class AgentDaemon {
   private openclawFailures = 0;
   private static readonly MAX_OPENCLAW_FAILURES = 3;
 
+  // Issue #85: Kill timeout constants (SIGTERM → wait → SIGKILL)
+  private static readonly CANCEL_KILL_TIMEOUT_MS = 10_000;
+
   constructor(config: DaemonConfig, logger: DaemonLogger = consoleLogger) {
     this.config = config;
     this.logger = logger;
@@ -240,6 +243,7 @@ export class AgentDaemon {
   // -------------------------------------------------------------------------
   // Heartbeat loop — sends status + currentTaskId every interval
   // Handles 404 by re-registering with the registry
+  // Issue #85: Handles cancelTask signal by killing the OpenClaw process
   // -------------------------------------------------------------------------
 
   private startHeartbeat(): void {
@@ -252,9 +256,9 @@ export class AgentDaemon {
         const status: "idle" | "working" | "error" = activeTask ? "working" : "idle";
         const currentTaskId = activeTask?.id ?? null;
 
-        const ack = await this.registry.heartbeat(status, currentTaskId);
+        const result = await this.registry.heartbeat(status, currentTaskId);
 
-        if (!ack) {
+        if (!result.ack) {
           // 404 — agent was removed from registry, re-register
           this.logger.warn("Heartbeat returned 404 — attempting re-registration");
           this.addLog("lifecycle", "Agent removed from registry, re-registering");
@@ -270,6 +274,17 @@ export class AgentDaemon {
           }
         } else {
           this.logger.debug("Heartbeat sent");
+
+          // Issue #85: Check for task cancellation signal
+          if (result.cancelTask && activeTask && result.cancelTask === activeTask.id) {
+            this.logger.warn(`Received cancelTask signal for task: ${activeTask.title}`, {
+              taskId: result.cancelTask,
+            });
+            this.addLog("lifecycle", `Task cancellation received: ${activeTask.title}`, result.cancelTask);
+
+            // Cancel the task — kill the OpenClaw process
+            await this.handleTaskCancellation(result.cancelTask, activeTask.title);
+          }
         }
       } catch (err) {
         this.logger.warn("Heartbeat failed", {
@@ -281,6 +296,104 @@ export class AgentDaemon {
     // Send first heartbeat immediately
     void beat();
     this.heartbeatTimer = setInterval(() => void beat(), this.config.heartbeatIntervalMs);
+  }
+
+  // -------------------------------------------------------------------------
+  // Task Cancellation — Issue #85
+  //
+  // When the heartbeat response includes cancelTask, we:
+  // 1. Cancel the OpenClaw execution (abort HTTP request)
+  // 2. Wait briefly for the task executor to notice the abort
+  // 3. Report the task as cancelled to the registry
+  // 4. Log the cancellation
+  //
+  // The OpenClaw client's cancelExecution() aborts the active AbortController,
+  // which causes the streaming/non-streaming fetch to throw an AbortError.
+  // The TaskExecutor catches this and the TaskPoller marks it as failed.
+  // We then override the status to "cancelled" via the registry.
+  // -------------------------------------------------------------------------
+
+  private async handleTaskCancellation(taskId: string, taskTitle: string): Promise<void> {
+    this.logger.info(`Cancelling task: ${taskTitle}`, { taskId });
+
+    try {
+      // Step 1: Kill the OpenClaw process (abort the HTTP request)
+      this.openclaw.cancelExecution();
+      this.logger.info("OpenClaw execution cancelled (SIGTERM equivalent — HTTP abort)", { taskId });
+
+      // Step 2: Wait for the task poller to notice the cancellation
+      // The AbortError propagates through the TaskExecutor → TaskPoller → finally block
+      const waitStart = Date.now();
+      const cancelled = await this.waitForTaskCancellation(AgentDaemon.CANCEL_KILL_TIMEOUT_MS);
+
+      if (cancelled) {
+        this.logger.info(`Task cancellation confirmed in ${Date.now() - waitStart}ms`, { taskId });
+      } else {
+        this.logger.warn(`Task cancellation timeout after ${AgentDaemon.CANCEL_KILL_TIMEOUT_MS}ms — task may still be running`, { taskId });
+        this.addLog("warn", `Cancellation timeout for task: ${taskTitle}`, taskId);
+      }
+
+      // Step 3: Report the task as cancelled to the registry
+      // Use reportTaskResult with status "failed" and a cancellation error
+      // The registry or caller can then finalize it as "cancelled"
+      try {
+        await this.registry.reportTaskResult(taskId, {
+          status: "failed",
+          output: null,
+          error: "Task cancelled via heartbeat signal",
+          elapsedMs: 0,
+          artifacts: [],
+        });
+        this.logger.info("Task cancellation reported to registry", { taskId });
+      } catch (reportErr) {
+        this.logger.error("Failed to report task cancellation to registry", {
+          taskId,
+          error: reportErr instanceof Error ? reportErr.message : String(reportErr),
+        });
+      }
+
+      // Step 4: Mark the task as cancelled (final status)
+      try {
+        await this.registry.updateTaskCancelled(taskId);
+        this.logger.info("Task marked as cancelled in registry", { taskId });
+      } catch (cancelErr) {
+        // updateTaskCancelled may not exist yet — non-critical
+        this.logger.debug("Could not mark task as cancelled (endpoint may not exist)", {
+          taskId,
+          error: cancelErr instanceof Error ? cancelErr.message : String(cancelErr),
+        });
+      }
+
+      this.addLog("lifecycle", `Task cancelled successfully: ${taskTitle}`, taskId);
+    } catch (err) {
+      this.logger.error("Error during task cancellation", {
+        taskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      this.addLog("error", `Task cancellation error: ${err instanceof Error ? err.message : String(err)}`, taskId);
+    }
+  }
+
+  /**
+   * Wait for the task poller's active task to be cleared after cancellation.
+   * Returns true if the task was cleared, false if timeout expired.
+   */
+  private waitForTaskCancellation(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = setInterval(() => {
+        if (!this.taskPoller.activeTask) {
+          clearInterval(checkInterval);
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startTime >= timeoutMs) {
+          clearInterval(checkInterval);
+          resolve(false);
+          return;
+        }
+      }, 200); // Check every 200ms
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import type {
   DaemonConfig,
   DaemonLogger,
   DaemonTask,
+  HeartbeatResult,
   IRegistryClient,
   LogEntry,
   SubtaskPayload,
@@ -125,13 +126,17 @@ export class RegistryClient implements IRegistryClient {
   // -------------------------------------------------------------------------
   // Heartbeat — POST /api/agents/:id/heartbeat
   // Sends status, currentTaskId, and timestamp.
-  // Returns true if acknowledged, false if 404 (agent removed — need re-register).
+  // Returns HeartbeatResult with ack status and optional cancelTask.
+  //
+  // Issue #85: The heartbeat response may include a `cancelTask` field
+  // with a task ID that should be cancelled. The daemon should kill the
+  // running OpenClaw process and report the task as cancelled.
   // -------------------------------------------------------------------------
 
   async heartbeat(
     status: "idle" | "working" | "error" = "idle",
     currentTaskId: string | null = null,
-  ): Promise<boolean> {
+  ): Promise<HeartbeatResult> {
     const res = await this.request("POST", `/api/agents/${this.agentId}/heartbeat`, {
       status,
       currentTaskId,
@@ -140,18 +145,28 @@ export class RegistryClient implements IRegistryClient {
     });
 
     if (res.ok) {
-      return true;
+      // Parse response for cancelTask field
+      try {
+        const json = await res.json() as { ack: boolean; cancelTask?: string };
+        return {
+          ack: true,
+          cancelTask: json.cancelTask || null,
+        };
+      } catch {
+        // If JSON parsing fails, treat as simple ack
+        return { ack: true, cancelTask: null };
+      }
     }
 
     if (res.status === 404) {
       // Agent was removed from registry — need to re-register
       this.logger.warn("Heartbeat returned 404 — agent not found in registry, will re-register");
-      return false;
+      return { ack: false, cancelTask: null };
     }
 
     const text = await res.text();
     this.logger.warn(`Heartbeat failed: ${res.status}`, { body: text });
-    return true; // Don't trigger re-register on server errors
+    return { ack: true, cancelTask: null }; // Don't trigger re-register on server errors
   }
 
   // -------------------------------------------------------------------------
@@ -397,5 +412,30 @@ export class RegistryClient implements IRegistryClient {
   async setOffline(): Promise<void> {
     this.logger.info("Setting agent status to offline");
     await this.updateStatus("offline");
+  }
+
+  // -------------------------------------------------------------------------
+  // Mark task as cancelled — PUT /api/tasks/:id with status=cancelled
+  //
+  // Issue #85: After the daemon kills the OpenClaw process, it reports the
+  // task result as "failed" (via reportTaskResult), then sets the final
+  // status to "cancelled" to distinguish from a real failure.
+  // -------------------------------------------------------------------------
+
+  async updateTaskCancelled(taskId: string): Promise<void> {
+    const res = await this.request("PUT", `/api/tasks/${taskId}`, {
+      status: "cancelled",
+      completedAt: new Date().toISOString(),
+      lockedBy: null,
+      lockedAt: null,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      this.logger.warn(`Failed to mark task as cancelled: ${res.status}`, {
+        taskId,
+        body: text,
+      });
+    }
   }
 }

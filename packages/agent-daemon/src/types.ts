@@ -201,6 +201,20 @@ export interface SubtaskPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Heartbeat result
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of a heartbeat call.
+ * - ack: true if registry acknowledged, false if 404 (re-register needed)
+ * - cancelTask: task ID to cancel (if the task was marked as cancelling)
+ */
+export interface HeartbeatResult {
+  ack: boolean;
+  cancelTask: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // OpenClaw status
 // ---------------------------------------------------------------------------
 
@@ -249,8 +263,12 @@ export interface IRegistryClient {
   /** POST /api/agents — register or upsert this agent */
   register(): Promise<void>;
 
-  /** POST /api/agents/:id/heartbeat — keep-alive with status. Returns false if 404 (re-register needed). */
-  heartbeat(status?: "idle" | "working" | "error", currentTaskId?: string | null): Promise<boolean>;
+  /** POST /api/agents/:id/heartbeat — keep-alive with status.
+   * Returns HeartbeatResult with ack status and optional cancelTask.
+   * ack=false means 404 (re-register needed).
+   * cancelTask is the task ID to cancel (if the task was marked as cancelling).
+   */
+  heartbeat(status?: "idle" | "working" | "error", currentTaskId?: string | null): Promise<HeartbeatResult>;
 
   /** PUT /api/agents/:id — update agent status */
   updateStatus(status: string): Promise<void>;
