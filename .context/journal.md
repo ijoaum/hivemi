@@ -1,5 +1,66 @@
 # HiveMI Development Journal
 
+## 2026-02-14 — Issue #75: Settings: Cloud Config UI
+
+### Summary
+Added a full Cloud configuration section to the Settings page. Users can now select a cloud provider (DigitalOcean/GCP), pick a region with country flags, choose an instance size with specs and pricing, configure API tokens, generate or upload SSH keys, and test the connection — all from the Dashboard UI.
+
+### What was done
+
+1. **Cloud Settings section** (`apps/dashboard/src/app/settings/page.tsx`):
+   - New "Cloud" tab in Settings nav (with Cloud icon from Lucide)
+   - **Provider Selection** — DigitalOcean / GCP cards with visual selection state
+   - **Region Selection** — Dynamic grid loaded from `/api/settings/cloud/regions`, showing country flags, names, and slugs. Scrollable when many regions. Falls back gracefully when no regions available.
+   - **Instance Size Cards** — Small/Medium/Large cards showing vCPU, RAM, and estimated monthly cost. Provider-specific specs (DO: 1vCPU/1GB/$6, 2/2GB/$12, 2/4GB/$24; GCP: 1/1.7GB/$7, 2/4GB/$17, 4/8GB/$34)
+   - **API Token** — Password input with show/hide toggle. Shows "Token configured" indicator when saved. Instructions per provider.
+   - **SSH Key** — Generate new ed25519 key (via `/api/settings/cloud/ssh-key/generate`), upload existing public key file, copy generated public key to clipboard. Visual feedback for all states.
+   - **Test Connection** — Button calls `/api/settings/cloud/test`, shows success (account email + droplet limit) or error with clear messaging. Disabled when no token configured.
+   - **Save Configuration** — Single save button with loading/success/error states. Clears sensitive fields after save.
+
+2. **API client additions** (`apps/dashboard/src/lib/api.ts`):
+   - `CloudConfig`, `CloudRegion`, `CloudTestResult`, `CloudSSHKeyResult` types
+   - `cloudApi` object: `get()`, `update()`, `regions()`, `test()`, `generateSSHKey()`
+   - All methods use the existing `fetchApi` helper → Next.js proxy routes → Registry backend
+
+3. **Backend was already implemented** — the Registry has full cloud-settings routes from previous issues:
+   - `GET/PUT /api/settings/cloud` — config CRUD with encrypted secret storage
+   - `GET /api/settings/cloud/regions` — dynamic regions from DO API (with static fallback)
+   - `POST /api/settings/cloud/test` — validates DO API token against `/v2/account`
+   - `POST /api/settings/cloud/ssh-key/generate` — ed25519 keypair generation
+   - Dashboard proxy routes for all endpoints already existed
+
+### Key Decisions
+- **Amber accent for selected states** — consistent with existing HiveMI design system (amber-500 borders + ring + bg)
+- **Provider-specific size specs** — hardcoded in the component since the provisioner's size mappings aren't exposed via API. DO sizes match `DO_SIZE_MAPPINGS` exactly. GCP sizes are approximate pending GCP provider implementation.
+- **Token field clears after save** — security: the API token is write-only (never returned by GET). After saving, we clear the input and show the "configured" indicator instead.
+- **No separate Zod validation in frontend** — the backend validates via `UpdateCloudConfigSchema` from `@hivemi/protocol`. Frontend relies on backend validation + user feedback.
+- **Region reset on provider switch** — switching from DO to GCP resets region to `us-central1` (and vice versa) since region slugs differ between providers.
+
+### Acceptance Criteria
+- [x] Tab Cloud visível na página de Settings
+- [x] Dropdown de provider funcional com DigitalOcean e GCP
+- [x] Seleção de região mostrando bandeiras e nomes
+- [x] Cards de tamanho exibindo specs e preço
+- [x] Campo de API token com validação básica
+- [x] Upload de SSH key funcionando ou geração automática
+- [x] Test Connection retorna sucesso/erro do backend
+- [x] Configuração salva e persiste
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/dashboard/src/app/settings/page.tsx` | +CloudSettings component, Cloud tab in nav |
+| `apps/dashboard/src/lib/api.ts` | +cloudApi, +CloudConfig, +CloudRegion, +CloudTestResult types |
+
+### Commits
+- `adb282a` — feat(dashboard): cloud config UI in Settings — provider, regions, sizes, token, SSH key, test connection (#75)
+
+### Next
+- GCP provider implementation (currently shows approximate specs)
+- Cloud config validation in deploy flow (ensure config exists before deploy)
+
+---
+
 ## 2026-02-12 — Issue #64: Integração Daemon ↔ OpenClaw — Execução de Tasks
 
 ### Summary
