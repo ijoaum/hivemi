@@ -6,6 +6,7 @@ import { tasksApi, agentsApi, teamsApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { X, Loader2 } from "lucide-react";
 import { ConfirmDialog } from "./confirm-dialog";
+import { TaskTimeline } from "./task-timeline";
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -189,6 +190,14 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
                   </pre>
                 </div>
               )}
+
+              {/* Activity Timeline */}
+              <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
+                <TaskTimeline
+                  taskId={task.id}
+                  isActive={task.status === "locked" || task.status === "cancelling"}
+                />
+              </div>
 
               {/* Timeout info */}
               {task.status === "failed" && (task.error === "timeout" || task.timeoutAt) && (

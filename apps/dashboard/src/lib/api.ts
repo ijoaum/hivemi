@@ -182,7 +182,23 @@ export const tasksApi = {
   delete: (id: string) => fetchApi<Task>(`/api/tasks/${id}`, {
     method: "DELETE",
   }),
+  progress: (id: string, params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+    return fetchApi<TaskProgressStep[]>(`/api/tasks/${id}/progress${query}`);
+  },
 };
+
+// Task Progress
+export interface TaskProgressStep {
+  id: string;
+  taskId: string;
+  step: string;
+  toolCall: string | null;
+  timestamp: string;
+}
 
 // Logs
 export interface LogEntry {
