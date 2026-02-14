@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { AgentCard } from "@/components/agent-card";
 import { StatusBar } from "@/components/status-bar";
-import { DeployAgentModal } from "@/components/deploy-agent-modal";
+import { DeployAgentModal, DeployToast } from "@/components/deploy-agent-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
-import { agentsApi, teamsApi, rolesApi, type Agent, type Team, type Role } from "@/lib/api";
+import { agentsApi, teamsApi, rolesApi, deployApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Hexagon } from "lucide-react";
 import { RoleIcon } from "@/components/role-icon";
@@ -71,6 +71,17 @@ export default function Home() {
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: "stop" | "restart" | "delete"; agentId: string; agentName: string } | null>(null);
   
+  // Deploy progress tracking
+  const [activeDeployId, setActiveDeployId] = useState<string | null>(null);
+  const [toastState, setToastState] = useState<{
+    visible: boolean;
+    agentName: string;
+    deployId: string;
+    status: "deploying" | "success" | "failed";
+  } | null>(null);
+  // Track deploy in background for toast status updates
+  const deployCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
   // Fetch from API with auto-refresh every 5 seconds
   const agentsFetcher = useCallback(() => agentsApi.list(), []);
   const teamsFetcher = useCallback(() => teamsApi.list(), []);
@@ -123,17 +134,82 @@ export default function Home() {
   };
 
   const handleDeploy = async (data: { name: string; roleId: string; teamId: string; model: string; autoStart: boolean }) => {
-    await agentsApi.create({
-      id: crypto.randomUUID(),
+    // Call the deploy API (Manager) instead of directly creating agents
+    const result = await deployApi.start({
       name: data.name,
       roleId: data.roleId,
       teamId: data.teamId,
       model: data.model,
-      host: "http://localhost",
-      port: 3001 + Math.floor(Math.random() * 100),
-      status: data.autoStart ? "idle" : "offline",
     });
+    setActiveDeployId(result.deployId);
+    return result;
+  };
+
+  const handleDeployRetry = async (deployId: string) => {
+    await deployApi.retry(deployId);
+  };
+
+  const handleDeployDestroy = async (deployId: string) => {
+    await deployApi.destroy(deployId, true);
+    setActiveDeployId(null);
     await refetchAgents();
+  };
+
+  const handleDeployModalClose = () => {
+    // If there's an active deploy in progress, show toast
+    if (activeDeployId) {
+      setToastState({
+        visible: true,
+        agentName: "Agent",
+        deployId: activeDeployId,
+        status: "deploying",
+      });
+
+      // Poll deploy status for toast updates
+      if (deployCheckRef.current) clearInterval(deployCheckRef.current);
+      const id = activeDeployId;
+      deployCheckRef.current = setInterval(async () => {
+        try {
+          const deploy = await deployApi.get(id);
+          if (deploy.status === "ready") {
+            setToastState((prev) =>
+              prev && prev.deployId === id ? { ...prev, status: "success" } : prev,
+            );
+            if (deployCheckRef.current) clearInterval(deployCheckRef.current);
+            await refetchAgents();
+            // Auto-dismiss success toast after 5s
+            setTimeout(() => {
+              setToastState((prev) =>
+                prev && prev.deployId === id ? null : prev,
+              );
+            }, 5000);
+          } else if (deploy.status === "failed" || deploy.status === "destroyed") {
+            setToastState((prev) =>
+              prev && prev.deployId === id ? { ...prev, status: "failed" } : prev,
+            );
+            if (deployCheckRef.current) clearInterval(deployCheckRef.current);
+          }
+        } catch {
+          // Ignore polling errors
+        }
+      }, 5000);
+    }
+    setIsDeployModalOpen(false);
+  };
+
+  const handleToastReopen = () => {
+    if (toastState?.deployId) {
+      setActiveDeployId(toastState.deployId);
+      setIsDeployModalOpen(true);
+      setToastState(null);
+      if (deployCheckRef.current) clearInterval(deployCheckRef.current);
+    }
+  };
+
+  const handleToastDismiss = () => {
+    setToastState(null);
+    setActiveDeployId(null);
+    if (deployCheckRef.current) clearInterval(deployCheckRef.current);
   };
 
   const handleAgentStart = async (agentId: string) => {
@@ -311,11 +387,24 @@ export default function Home() {
       {/* Deploy Modal */}
       <DeployAgentModal
         isOpen={isDeployModalOpen}
-        onClose={() => setIsDeployModalOpen(false)}
+        onClose={handleDeployModalClose}
         onDeploy={handleDeploy}
+        onRetry={handleDeployRetry}
+        onDestroy={handleDeployDestroy}
         roles={apiRoles || []}
         teams={apiTeams || []}
+        activeDeployId={activeDeployId}
       />
+
+      {/* Deploy Toast (shown when modal closed during active deploy) */}
+      {toastState?.visible && (
+        <DeployToast
+          agentName={toastState.agentName}
+          status={toastState.status}
+          onReopen={handleToastReopen}
+          onDismiss={handleToastDismiss}
+        />
+      )}
 
       {/* Stop Confirmation */}
       <ConfirmDialog

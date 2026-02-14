@@ -357,6 +357,15 @@ export interface DestroyResponse {
 export const deployApi = {
   get: (id: string) => fetchApi<Deploy>(`/api/deploy/${id}`),
   list: () => fetchApi<Deploy[]>("/api/deploys"),
+  start: (data: { name: string; roleId: string; teamId: string; model: string; cloudProvider?: string; region?: string; instanceSize?: string }) =>
+    fetchApi<{ deployId: string; agentId: string; message: string }>("/api/deploy", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  retry: (id: string) =>
+    fetchApi<{ deployId: string }>(`/api/deploy/${id}/retry`, {
+      method: "POST",
+    }),
   destroy: (id: string, force?: boolean) => {
     const query = force ? "?force=true" : "";
     return fetchApi<DestroyResponse>(`/api/deploy/${id}${query}`, {
