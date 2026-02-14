@@ -13,6 +13,82 @@ import type {
 } from "./types.js";
 
 /**
+ * Agent-to-instance mapping for enriching cost breakdowns.
+ */
+export interface AgentInstanceMapping {
+  agentId: string;
+  agentName: string;
+  instanceId: string;
+}
+
+/**
+ * Cached cost report with metadata.
+ */
+export interface CachedCostReport {
+  report: CostReport;
+  cachedAt: number;
+  expiresAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cache
+// ---------------------------------------------------------------------------
+
+let _costCache: CachedCostReport | null = null;
+const DEFAULT_CACHE_TTL_MS = 60_000; // 1 minute
+
+/**
+ * Get the cached cost report if still valid.
+ */
+export function getCachedCostReport(): CostReport | null {
+  if (!_costCache) return null;
+  if (Date.now() > _costCache.expiresAt) {
+    _costCache = null;
+    return null;
+  }
+  return _costCache.report;
+}
+
+/**
+ * Store a cost report in cache.
+ */
+export function setCostCache(report: CostReport, ttlMs: number = DEFAULT_CACHE_TTL_MS): void {
+  const now = Date.now();
+  _costCache = {
+    report,
+    cachedAt: now,
+    expiresAt: now + ttlMs,
+  };
+}
+
+/**
+ * Invalidate the cost cache. Call when infra changes (deploy, destroy, etc.).
+ */
+export function invalidateCostCache(): void {
+  _costCache = null;
+}
+
+/**
+ * Get cache metadata (for debugging/API).
+ */
+export function getCostCacheInfo(): { cached: boolean; cachedAt: number | null; expiresAt: number | null } {
+  if (!_costCache) return { cached: false, cachedAt: null, expiresAt: null };
+  if (Date.now() > _costCache.expiresAt) {
+    _costCache = null;
+    return { cached: false, cachedAt: null, expiresAt: null };
+  }
+  return {
+    cached: true,
+    cachedAt: _costCache.cachedAt,
+    expiresAt: _costCache.expiresAt,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Core Functions
+// ---------------------------------------------------------------------------
+
+/**
  * Estimate the monthly cost for a single instance size.
  */
 export function estimateInstanceCost(
@@ -107,15 +183,25 @@ function dayOfMonth(date: Date): number {
  * @param provider - Cloud provider with size/pricing mappings
  * @param instances - Active instances with createdAt dates
  * @param now - Current date (defaults to Date.now(), injectable for testing)
+ * @param agentMappings - Optional agent-to-instance mappings for enriched breakdown
  */
 export function generateCostReport(
   provider: ICloudProvider,
   instances: Instance[],
   now: Date = new Date(),
+  agentMappings?: AgentInstanceMapping[],
 ): CostReport {
   const totalDays = daysInMonth(now);
   const currentDay = dayOfMonth(now);
   const dailyFraction = currentDay / totalDays;
+
+  // Build instanceId → agent lookup
+  const agentByInstanceId = new Map<string, AgentInstanceMapping>();
+  if (agentMappings) {
+    for (const mapping of agentMappings) {
+      agentByInstanceId.set(mapping.instanceId, mapping);
+    }
+  }
 
   const breakdown: InstanceCostBreakdown[] = instances.map((inst) => {
     const monthlyCost = estimateInstanceCost(provider, inst.size);
@@ -132,12 +218,19 @@ export function generateCostReport(
     const dailyCost = monthlyCost / totalDays;
     const accumulatedCostUsd = Math.round(dailyCost * daysRunning * 100) / 100;
 
+    // Enrich with agent info if available
+    const agentMapping = agentByInstanceId.get(inst.id);
+
     return {
       name: inst.name,
       size: inst.size,
       monthlyCostUsd: monthlyCost,
       daysRunning: Math.round(daysRunning * 10) / 10,
       accumulatedCostUsd,
+      ...(agentMapping && {
+        agentId: agentMapping.agentId,
+        agentName: agentMapping.agentName,
+      }),
     };
   });
 

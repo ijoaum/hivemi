@@ -153,6 +153,10 @@ export interface InstanceCostBreakdown {
   daysRunning: number;
   /** Accumulated cost for time running (prorated) */
   accumulatedCostUsd: number;
+  /** Agent ID associated with this instance (when known) */
+  agentId?: string;
+  /** Agent name associated with this instance (when known) */
+  agentName?: string;
 }
 
 /**

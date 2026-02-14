@@ -60,7 +60,27 @@ export { detectControlPlaneIP, detectIPChange, clearIPCache, isValidIPv4 } from 
 
 // Utilities
 export { reconcile, detectIPMismatches, generateReconciliationReport } from "./reconciliation.js";
-export { estimateCost, estimateInstanceCost, estimateCostFromInstances, generateCostReport } from "./cost.js";
+export {
+  estimateCost,
+  estimateInstanceCost,
+  estimateCostFromInstances,
+  generateCostReport,
+  getCachedCostReport,
+  setCostCache,
+  invalidateCostCache,
+  getCostCacheInfo,
+} from "./cost.js";
+export type { AgentInstanceMapping, CachedCostReport } from "./cost.js";
+
+// Pricing Tables
+export {
+  DIGITALOCEAN_PRICING,
+  GCP_PRICING,
+  PROVIDER_PRICING,
+  getPricingForProvider,
+  getMonthlyCost,
+  listProviders,
+} from "./pricing/index.js";
 
 // ---------------------------------------------------------------------------
 // Factory — convenience function to create a provider by name
