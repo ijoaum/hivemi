@@ -222,26 +222,46 @@ describe("Deploy documentation", () => {
 
 describe("Daemon RegistryClient private IP detection", () => {
   let clientSource: string;
+  let networkingSource: string;
 
   beforeEach(() => {
     clientSource = readFileSync(resolve(ROOT, "packages/agent-daemon/src/registry-client.ts"), "utf-8");
+    networkingSource = readFileSync(resolve(ROOT, "packages/agent-daemon/src/networking.ts"), "utf-8");
   });
 
   it("detects private VPC IP from network interfaces", () => {
     expect(clientSource).toContain("detectPrivateIp");
   });
 
-  it("matches RFC1918 private ranges (10.x, 172.16-31.x, 192.168.x)", () => {
-    expect(clientSource).toContain('addr.address.startsWith("10.")');
-    expect(clientSource).toContain('addr.address.startsWith("172.');
-    expect(clientSource).toContain('addr.address.startsWith("192.168.")');
+  it("imports detectPrivateIp from networking module", () => {
+    expect(clientSource).toContain('from "./networking.js"');
+  });
+
+  it("networking module matches RFC1918 private ranges (10.x, 172.16-31.x, 192.168.x)", () => {
+    expect(networkingSource).toContain('"10."');
+    expect(networkingSource).toContain('"172.16."');
+    expect(networkingSource).toContain('"172.31."');
+    expect(networkingSource).toContain('"192.168."');
   });
 
   it("sends privateIp in registration payload", () => {
     expect(clientSource).toContain("privateIp");
   });
 
+  it("sends publicIp in registration payload", () => {
+    expect(clientSource).toContain("publicIp");
+  });
+
   it("uses privateIp as host when available", () => {
     expect(clientSource).toMatch(/host:\s*privateIp\s*\|\|/);
+  });
+
+  it("caches private and public IP for heartbeat use", () => {
+    expect(clientSource).toContain("cachedPrivateIp");
+    expect(clientSource).toContain("cachedPublicIp");
+  });
+
+  it("sends privateIp in heartbeat when cached", () => {
+    expect(clientSource).toContain("this.cachedPrivateIp");
   });
 });
