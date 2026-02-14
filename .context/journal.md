@@ -1,5 +1,87 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #80: Registry Bind to Private Interface (VPC)
+
+### Summary
+Configured the Registry to bind to a private VPC interface instead of `0.0.0.0`, ensuring only agents within the private network can connect. Changed the default bind address to `127.0.0.1` (safe fallback), added `BIND_ADDRESS` env var support to both Registry and Manager, updated the deploy orchestrator to auto-construct private registry URLs from the control plane IP, and created comprehensive deploy documentation.
+
+### What was done
+
+1. **Registry — BIND_ADDRESS** (`apps/registry/src/index.ts`):
+   - New `BIND_ADDRESS` env var controls which interface the Registry listens on
+   - Default changed from `0.0.0.0` → `127.0.0.1` (safe by default)
+   - Legacy `REGISTRY_HOST` still supported for backward compatibility
+   - Priority: `BIND_ADDRESS` > `REGISTRY_HOST` > `127.0.0.1`
+   - Host logged on startup for observability
+
+2. **Manager — BIND_ADDRESS** (`apps/manager/src/index.ts`):
+   - Added `BIND_ADDRESS` env var support
+   - Default `0.0.0.0` (Manager is the public-facing entry point)
+   - `hostname` now passed to `serve()` for proper binding
+   - Host logged on startup
+
+3. **Deploy Orchestrator — Private Registry URL** (`apps/manager/src/lib/deploy-orchestrator.ts`):
+   - Registry URL auto-constructed from `controlPlaneIp` when it's not localhost
+   - New `REGISTRY_PRIVATE_URL` env var for explicit override
+   - New `REGISTRY_PORT` env var for port in auto-constructed URLs (default: 4001)
+   - Priority: `REGISTRY_PRIVATE_URL` > auto-construct from `controlPlaneIp` > `REGISTRY_URL` > `http://localhost:4001`
+   - Agents bootstrapped with private IP registry URL → never connect over public internet
+
+4. **Manager Registry Client** (`apps/manager/src/lib/registry-client.ts`):
+   - Documented VPC usage for `REGISTRY_URL`
+
+5. **Daemon Types** (`packages/agent-daemon/src/types.ts`):
+   - `registryUrl` comment updated with VPC example
+
+6. **Deploy Documentation** (`docs/DEPLOY.md`):
+   - Network architecture diagram (Manager public, Registry + agents VPC-only)
+   - Full env var reference for Registry, Manager, and Daemon
+   - Security model explanation (BIND_ADDRESS + firewall + HIVEMI_SECRET = defense in depth)
+   - DigitalOcean VPC setup instructions
+   - Verification steps (ss, curl health, public access rejection)
+
+7. **33 new tests** (`apps/registry/src/__tests__/vpc-bind.test.ts`):
+   - Registry BIND_ADDRESS (6 tests): default, env var, legacy compat, priority, hostname, logging
+   - Manager BIND_ADDRESS (4 tests): default, env var, hostname, logging
+   - Daemon config (2 tests): VPC documentation, required field
+   - Manager RegistryClient (2 tests): env var, VPC docs
+   - Deploy orchestrator URL (5 tests): REGISTRY_PRIVATE_URL, auto-construct, localhost skip, fallback, port
+   - Bootstrapper config (2 tests): .env REGISTRY_URL, config source
+   - Deploy docs (8 tests): BIND_ADDRESS, default, VPC, REGISTRY_URL, CONTROL_PLANE_IP, verification, warnings, DO setup
+   - Daemon private IP detection (4 tests): detectPrivateIp, RFC1918 ranges, registration, host field
+
+### Key Decisions
+- **Default 127.0.0.1, not 0.0.0.0** — "secure by default" principle. The old default (0.0.0.0) meant a fresh install would expose the Registry to the public internet. Now, you must explicitly set `BIND_ADDRESS` to expose it. This is a **breaking change** for anyone who relied on `REGISTRY_HOST` defaulting to 0.0.0.0 — but that was a security risk.
+- **Manager defaults to 0.0.0.0** — different from Registry because the Manager IS the public entry point. It should be accessible (usually behind a reverse proxy).
+- **Auto-construct from controlPlaneIp** — avoids requiring users to set both `CONTROL_PLANE_IP` and `REGISTRY_URL` to the same IP. The orchestrator derives the registry URL from the control plane IP automatically.
+- **Legacy REGISTRY_HOST compat** — existing deploys using REGISTRY_HOST won't break. BIND_ADDRESS takes priority when both are set.
+- **Defense in depth** — BIND_ADDRESS is one layer. The firewall (cloud provider) is another. HIVEMI_SECRET auth is a third. Any two can fail and you're still protected.
+
+### Acceptance Criteria
+- [x] Registry escuta apenas em interface privada (BIND_ADDRESS)
+- [x] Variável BIND_ADDRESS configurável
+- [x] Fallback seguro se BIND_ADDRESS não definido (127.0.0.1)
+- [x] Daemon se conecta via IP privado (registryUrl from bootstrap)
+- [x] Manager se conecta via IP privado (REGISTRY_URL env)
+- [x] Documentação atualizada (docs/DEPLOY.md)
+- [x] Testes passando com nova configuração (33 new tests, all existing tests pass)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/registry/src/index.ts` | BIND_ADDRESS env var, default 127.0.0.1 |
+| `apps/manager/src/index.ts` | BIND_ADDRESS env var, hostname binding |
+| `apps/manager/src/lib/deploy-orchestrator.ts` | Auto-construct private registry URL |
+| `apps/manager/src/lib/registry-client.ts` | VPC documentation |
+| `packages/agent-daemon/src/types.ts` | VPC documentation |
+| `docs/DEPLOY.md` | NEW — full deploy guide with network architecture |
+| `apps/registry/src/__tests__/vpc-bind.test.ts` | NEW — 33 tests |
+
+### Commits
+- `9148ac9` — feat(infra): registry bind to private VPC interface with BIND_ADDRESS (#80)
+
+---
+
 ## 2026-02-15 — Issue #79: Quick Stats: Monthly Cost
 
 ### Summary
