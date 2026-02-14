@@ -1,5 +1,121 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #82: Agent Registration: IP Privado
+
+### Summary
+Ensured that the Agent Daemon registers with the Registry using its private VPC IP (10.x.x.x) instead of the public IP, enabling secure P2P communication between agents via the private network. Extracted IP detection into a dedicated networking module, added dual IP storage (private + public), updated heartbeat to sync private IP changes, and added comprehensive tests and documentation.
+
+### What was done
+
+1. **`networking.ts` module** (`packages/agent-daemon/src/networking.ts`):
+   - Extracted from inline code in `registry-client.ts` into dedicated module
+   - `detectPrivateIp()`: scans network interfaces for RFC1918 addresses, prefers 10.x.x.x (cloud VPCs)
+   - `detectPublicIp()`: finds non-private, non-loopback IPv4 addresses
+   - `isPrivateIp(address)`: validates any IPv4 against RFC1918 ranges
+   - `getAllPrivateIps()`: returns all private IPs sorted by cloud preference (10.x first)
+   - Full RFC1918 coverage: 10.0.0.0/8, 172.16.0.0/12 (all 16 sub-ranges), 192.168.0.0/16
+   - Exported from `packages/agent-daemon/src/index.ts` for library usage
+
+2. **RegistryClient enhancements** (`packages/agent-daemon/src/registry-client.ts`):
+   - Uses `networking.ts` instead of inline detection
+   - Caches `privateIp` and `publicIp` after registration for reuse
+   - `getPrivateIp()` / `getPublicIp()` accessors for cached values
+   - Registration sends both `privateIp` and `publicIp` to Registry
+   - `host` field prefers: privateIp → publicIp → "0.0.0.0" (fallback chain)
+   - Heartbeat sends `privateIp` when cached (keeps Registry in sync if IP changes)
+
+3. **Protocol schema updates** (`packages/protocol/src/types.ts`):
+   - `RegisterAgentSchema`: added `privateIp` and `publicIp` optional string fields
+   - `HeartbeatPayloadSchema`: added `privateIp` optional string field
+   - `AgentSchema`: added `publicIp` nullable string field
+
+4. **DB schema** (`apps/registry/src/db/schema.ts`):
+   - Added `publicIp` varchar(45) column to `agents` table (alongside existing `privateIp`)
+
+5. **Registry routes**:
+   - `POST /api/agents` (agents.ts): persists `privateIp` and `publicIp` on both create and update
+   - `POST /api/agents/:id/heartbeat` (heartbeat.ts): updates `privateIp` when provided in payload
+   - `GET /api/agents` and `GET /api/agents/:id` (routes.ts): include `publicIp` in response
+
+6. **Dashboard**:
+   - `Agent` interface in `api.ts`: added `publicIp: string | null`
+   - Agent detail page: shows "Private IP (VPC)" and "Public IP" separately in deploy sidebar
+
+7. **Documentation** (`docs/DEPLOY.md`):
+   - New "Agent Private IP Detection" section covering:
+     - Detection algorithm (enumerate → filter → match → prefer → cache)
+     - Storage model (host vs privateIp vs publicIp)
+     - Heartbeat IP updates
+     - P2P communication flow with private IP preference
+     - Fallback behavior table
+     - Dashboard display
+     - Networking module API reference
+
+8. **37 new tests** (`packages/agent-daemon/src/__tests__/private-ip.test.ts`):
+   - **isPrivateIp (7 tests)**: Class A/B/C, public, loopback, out-of-range 172.x, out-of-range 192.x
+   - **getAllPrivateIps (4 tests)**: array format, entry structure, private-only validation, sort order
+   - **detectPrivateIp (2 tests)**: return type, validity check
+   - **detectPublicIp (2 tests)**: return type, not-private check
+   - **RegistryClient registration (4 tests)**: sends privateIp, host fallback, dual IP, caching
+   - **RegistryClient heartbeat (3 tests)**: IP sync after register, no-register heartbeat, working status
+   - **RegisterAgentSchema (2 tests)**: with and without privateIp/publicIp
+   - **HeartbeatPayloadSchema (2 tests)**: with and without privateIp
+   - **P2P communication (2 tests)**: private IP preference, public fallback
+   - **Route verification (3 tests)**: agents route, heartbeat route, DB schema
+   - **Discovery verification (1 test)**: returns privateIp
+   - **Dashboard API (1 test)**: Agent interface has publicIp
+   - **Edge cases (4 tests)**: empty string, IPv6, all 172.16-31 sub-ranges, boundary rejection
+
+9. **Updated 4 existing tests** (`apps/registry/src/__tests__/vpc-bind.test.ts`):
+   - Updated to check networking module instead of inline code
+   - Added tests for publicIp, caching, heartbeat integration
+
+### Key Decisions
+- **Extracted networking.ts** — the inline `detectPrivateIp` in registry-client.ts was growing and wasn't testable independently. A dedicated module with exported utilities is cleaner and reusable.
+- **Dual IP storage (private + public)** — storing both IPs separately (instead of just one) gives the system flexibility: P2P uses private IP, monitoring/debugging uses public IP, and the Dashboard shows both.
+- **10.x.x.x preference** — cloud VPCs (DigitalOcean, AWS, GCP) overwhelmingly use the 10.0.0.0/8 range. Sorting private IPs with 10.x first means the primary detection result is almost always the VPC address.
+- **Heartbeat includes privateIp** — if an agent's private IP changes (VM migration within VPC), the next heartbeat automatically updates the Registry. No manual intervention needed.
+- **Backward compatible** — all new schema fields are optional. Existing agents without privateIp continue to work. Heartbeat without privateIp is accepted. Registration without publicIp is valid.
+- **host field uses private IP** — the `host` column (used as primary communication address) prefers privateIp over publicIp. This means inter-agent traffic defaults to VPC when available.
+
+### Acceptance Criteria
+- [x] Daemon detects and uses IP privado (10.x.x.x) no registro
+- [x] Schema do banco armazena private_ip e public_ip
+- [x] Heartbeat usa IP privado
+- [x] Comunicação P2P entre agentes funciona via VPC (privateIp preference in P2PClient)
+- [x] Fallback implementado para cenários sem VPC (publicIp → "0.0.0.0")
+- [x] Testes passando com IP privado (37 new + 147 total across 5 test files)
+- [x] Documentação atualizada (DEPLOY.md — detection, storage, P2P, fallback)
+- [x] Dashboard mostra IP privado quando aplicável (+ public IP)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/agent-daemon/src/networking.ts` | NEW — IP detection utilities |
+| `packages/agent-daemon/src/registry-client.ts` | Use networking module, cache IPs, send publicIp, heartbeat sync |
+| `packages/agent-daemon/src/index.ts` | Export networking module |
+| `packages/protocol/src/types.ts` | +privateIp/publicIp in RegisterAgent, +privateIp in Heartbeat, +publicIp in Agent |
+| `apps/registry/src/db/schema.ts` | +publicIp column on agents table |
+| `apps/registry/src/routes/agents.ts` | Persist privateIp/publicIp on create/update |
+| `apps/registry/src/routes/heartbeat.ts` | Update privateIp from heartbeat payload |
+| `apps/registry/src/routes.ts` | +publicIp in agent list/detail queries |
+| `apps/dashboard/src/lib/api.ts` | +publicIp on Agent interface |
+| `apps/dashboard/src/app/agents/[id]/page.tsx` | Show Private IP (VPC) + Public IP |
+| `docs/DEPLOY.md` | New section: Agent Private IP Detection |
+| `packages/agent-daemon/src/__tests__/private-ip.test.ts` | NEW — 37 tests |
+| `apps/registry/src/__tests__/vpc-bind.test.ts` | Updated — 4 tests for networking module |
+
+### Commits
+- `d8f88ec` — feat(daemon): agent registration with private IP — networking module, dual IP storage, heartbeat sync (#82)
+- `b167ed7` — test(daemon): 37 private IP tests + update VPC bind tests for networking module (#82)
+
+### Next
+- DB migration for `public_ip` column (when running against real Postgres)
+- Agent detail page: copy-to-clipboard for IP addresses
+- Network topology visualization in Dashboard
+
+---
+
 ## 2026-02-15 — Issue #81: Firewall: Regras de IP Público
 
 ### Summary
