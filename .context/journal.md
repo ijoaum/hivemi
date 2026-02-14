@@ -1,5 +1,55 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #79: Quick Stats: Monthly Cost
+
+### Summary
+Replaced the "Teams" Quick Stats card on the home page with a "Monthly Cost" card that consumes the existing `/api/infra/costs` endpoint and displays estimated monthly infrastructure cost.
+
+### What was done
+
+1. **`MonthlyCostCard` component** (`apps/dashboard/src/components/monthly-cost-card.tsx`):
+   - Self-contained component with its own data fetching via `useApi` hook
+   - Calls `infraApi.costs()` with 60s auto-refresh (costs don't change frequently)
+   - **Main display**: `~$X/mo` with dollar sign icon (emerald colored)
+   - **Projected cost**: shown below main value when different from monthly estimate (amber TrendingUp icon)
+   - **Breakdown tooltip**: click/hover reveals popup with per-instance costs (name + monthly rate) and total accumulated cost
+   - **Loading state**: spinner with "Loading..." text
+   - **Error state**: red alert icon with "Unavailable" text
+   - Currency formatting: `$X` for < $1000, `$X.Xk` for >= $1000
+
+2. **Updated Home Page** (`apps/dashboard/src/app/page.tsx`):
+   - Imported `MonthlyCostCard` component
+   - Replaced 4th Quick Stats card ("Teams") with `<MonthlyCostCard />`
+   - Quick Stats now: Total Agents | Working | Idle | Monthly Cost
+
+### Key Decisions
+- **Self-contained component** — the cost card manages its own API call and state, keeping the home page clean. It doesn't depend on any parent state.
+- **60s refresh interval** — costs change only when VMs are added/removed, much slower than agent status. 60s is a good balance.
+- **Click to show breakdown** — avoids hover-only interaction (which doesn't work well on mobile). `onMouseLeave` dismisses the tooltip for desktop.
+- **Approximate prefix (~)** — costs are estimates based on instance sizes, not actual billing. The `~` communicates this clearly.
+- **Graceful degradation** — if the costs API fails (no cloud configured, manager down), the card shows "Unavailable" instead of breaking the page.
+
+### Acceptance Criteria
+- [x] Card "Teams" removido
+- [x] Card "Monthly Cost" visível na home
+- [x] Custo total sendo calculado corretamente (via infraApi.costs())
+- [x] Valor formatado como moeda (~$45/mo)
+- [x] Ícone apropriado exibido (DollarSign)
+- [x] Loading state funcional (Loader2 spinner)
+- [x] Tratamento de erro implementado (AlertCircle + "Unavailable")
+- [x] Valor atualiza quando há mudanças na infra (60s refresh)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/dashboard/src/components/monthly-cost-card.tsx` | NEW — Monthly cost card component |
+| `apps/dashboard/src/app/page.tsx` | Replace Teams card with MonthlyCostCard |
+
+### Commits
+- `9334b81` — feat(dashboard): replace Teams card with Monthly Cost card (#79)
+
+---
+
 ## 2026-02-15 — Issue #78: Agent Detail: Métricas e Sparklines
 
 ### Summary
