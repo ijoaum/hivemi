@@ -45,8 +45,16 @@ function formatRelativeTime(date: Date | string): string {
   return "just now";
 }
 
+/** Check if a failed task was caused by a timeout */
+function isTimeout(task: Task): boolean {
+  return task.status === "failed" && (task.error === "timeout" || !!task.timeoutAt);
+}
+
 export function TaskCard({ task, onClick }: TaskCardProps) {
-  const status = statusConfig[task.status];
+  const timeout = isTimeout(task);
+  const status = timeout
+    ? { color: "text-orange-400", bg: "bg-orange-500/20", label: "Timed Out" }
+    : statusConfig[task.status];
   const priority = priorityConfig[task.priority];
   
   const progress = task.estimatedMs && task.elapsedMs 
@@ -59,13 +67,21 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       className={cn(
         "bg-gray-800/50 border border-gray-700/50 rounded-lg p-4 cursor-pointer",
         "hover:bg-gray-800 hover:border-gray-600 transition-all",
-        task.status === "failed" && "border-red-500/30"
+        task.status === "failed" && !timeout && "border-red-500/30",
+        timeout && "border-orange-500/30",
       )}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-white truncate">{task.title}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-medium text-white truncate">{task.title}</h3>
+            {timeout && (
+              <span className="text-orange-400 flex-shrink-0" title="Task timed out">
+                ⏱️
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-400 mt-1">
             {task.agentName} • {task.teamName}
           </p>
@@ -91,8 +107,15 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
         </div>
       )}
 
-      {/* Error message */}
-      {task.status === "failed" && task.error && (
+      {/* Timeout message */}
+      {timeout && (
+        <div className="mb-3 p-2 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-400 font-mono truncate">
+          ⏱️ Task timed out — no heartbeat from agent
+        </div>
+      )}
+
+      {/* Error message (non-timeout) */}
+      {task.status === "failed" && task.error && !timeout && (
         <div className="mb-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-mono truncate">
           {task.error}
         </div>

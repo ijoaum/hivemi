@@ -19,4 +19,5 @@ export interface Task {
   error?: string;
   input?: string;
   output?: string;
+  timeoutAt?: Date;
 }

@@ -173,6 +173,7 @@ export const tasks = pgTable("tasks", {
   lockedAt: timestamp("locked_at"),
   parentTaskId: uuid("parent_task_id").references((): any => tasks.id),
   artifacts: jsonb("artifacts").$type<TaskArtifact[]>().notNull().default([]),
+  timeoutAt: timestamp("timeout_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),

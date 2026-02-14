@@ -153,6 +153,7 @@ export interface Task {
   error: string | null;
   estimatedMs: number | null;
   elapsedMs: number | null;
+  timeoutAt: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

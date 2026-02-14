@@ -21,6 +21,7 @@ const statusColors: Record<string, string> = {
   failed: "bg-red-500/20 text-red-400",
   cancelling: "bg-yellow-500/20 text-yellow-400",
   cancelled: "bg-gray-500/20 text-gray-400",
+  timeout: "bg-orange-500/20 text-orange-400",
 };
 
 const priorityColors: Record<string, string> = {
@@ -86,9 +87,15 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
               <div>
                 <h3 className="text-2xl font-bold text-white mb-2">{task.title}</h3>
                 <div className="flex items-center gap-2">
-                  <span className={cn("text-xs px-2 py-1 rounded-full capitalize", statusColors[task.status])}>
-                    {task.status}
-                  </span>
+                  {task.status === "failed" && (task.error === "timeout" || task.timeoutAt) ? (
+                    <span className={cn("text-xs px-2 py-1 rounded-full capitalize", statusColors.timeout)}>
+                      ⏱️ timed out
+                    </span>
+                  ) : (
+                    <span className={cn("text-xs px-2 py-1 rounded-full capitalize", statusColors[task.status])}>
+                      {task.status}
+                    </span>
+                  )}
                   <span className={cn("text-xs px-2 py-1 rounded-full capitalize", priorityColors[task.priority])}>
                     {task.priority} priority
                   </span>
@@ -129,6 +136,14 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
                     {task.completedAt ? new Date(task.completedAt).toLocaleString() : "-"}
                   </p>
                 </div>
+                {task.timeoutAt && (
+                  <div>
+                    <h4 className="text-sm font-medium text-orange-400 mb-1">⏱️ Timed Out</h4>
+                    <p className="text-orange-300">
+                      {new Date(task.timeoutAt).toLocaleString()}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <h4 className="text-sm font-medium text-gray-400 mb-1">Duration</h4>
                   <p className="text-white">
@@ -157,8 +172,19 @@ export function TaskDetailModal({ taskId, isOpen, onClose, onRetry, onCancel }: 
                 </div>
               )}
 
+              {/* Timeout info */}
+              {task.status === "failed" && (task.error === "timeout" || task.timeoutAt) && (
+                <div>
+                  <h4 className="text-sm font-medium text-orange-400 mb-2">⏱️ Timeout</h4>
+                  <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 text-sm text-orange-300">
+                    This task was automatically marked as failed because the agent stopped sending heartbeats.
+                    The agent may have crashed, hung, or lost connectivity.
+                  </div>
+                </div>
+              )}
+
               {/* Error */}
-              {task.error && (
+              {task.error && task.error !== "timeout" && (
                 <div>
                   <h4 className="text-sm font-medium text-red-400 mb-2">Error</h4>
                   <pre className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-sm text-red-300 overflow-auto max-h-32 font-mono">

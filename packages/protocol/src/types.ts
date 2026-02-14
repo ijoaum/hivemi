@@ -179,6 +179,7 @@ export const TaskSchema = z.object({
   lockedAt: z.coerce.date().nullable(),
   parentTaskId: z.string().uuid().nullable(),
   artifacts: z.array(TaskArtifactSchema).default([]),
+  timeoutAt: z.coerce.date().nullable().optional(),
   createdAt: z.coerce.date(),
   startedAt: z.coerce.date().nullable(),
   completedAt: z.coerce.date().nullable(),

@@ -4,6 +4,7 @@ import { logger } from "./lib/logger.js";
 import { startOfflineDetection } from "./lib/offline-detection.js";
 import { startLockTimeoutJob } from "./lib/lock-timeout.js";
 import { startReconciliationJob } from "./lib/reconciliation-job.js";
+import { startTimeoutRecovery } from "./lib/timeout-recovery.js";
 
 const port = parseInt(process.env.PORT || "4001");
 // BIND_ADDRESS controls which interface the registry listens on.
@@ -27,6 +28,11 @@ const reconciliationIntervalMs = parseInt(process.env.RECONCILIATION_INTERVAL_MS
 const reconciliationAutoFix = process.env.RECONCILIATION_AUTO_FIX !== "false"; // default: true
 const reconciliationWebhookUrl = process.env.RECONCILIATION_WEBHOOK_URL || undefined;
 
+// Timeout recovery configuration (from env vars or defaults)
+const timeoutThresholdMs = parseInt(process.env.TIMEOUT_THRESHOLD_MS || "1800000"); // 30 minutes
+const timeoutCheckIntervalMs = parseInt(process.env.TIMEOUT_CHECK_INTERVAL_MS || "300000"); // 5 minutes
+const timeoutWebhookUrl = process.env.TIMEOUT_WEBHOOK_URL || undefined;
+
 logger.info({ port, host }, "Starting HiveMI Registry...");
 
 serve({
@@ -47,5 +53,12 @@ serve({
     intervalMs: reconciliationIntervalMs,
     autoFixPhantoms: reconciliationAutoFix,
     notifyWebhookUrl: reconciliationWebhookUrl,
+  });
+
+  // Start the timeout recovery job to detect stuck tasks (Issue #86)
+  startTimeoutRecovery({
+    timeoutThresholdMs,
+    intervalMs: timeoutCheckIntervalMs,
+    notifyWebhookUrl: timeoutWebhookUrl,
   });
 });
