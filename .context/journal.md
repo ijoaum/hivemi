@@ -1,5 +1,61 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #87: Dashboard Cancel Button on Tasks
+
+### Summary
+Added Cancel button to both the task detail modal and task card components. The button appears only for running tasks (status=locked), shows a confirmation dialog before proceeding, displays a cancelling state with spinner while the API call is in flight, disables the button to prevent double-clicks, and shows inline error feedback if the cancellation fails. Also shows a passive "Cancelling..." indicator when the task status transitions to `cancelling`.
+
+### What was done
+
+1. **Task Detail Modal** (`apps/dashboard/src/components/task-detail-modal.tsx`):
+   - Added `useState` for `showCancelConfirm`, `isCancelling`, `cancelError`
+   - Cancel button visible only when `task.status === "locked"` (running)
+   - Clicking opens `ConfirmDialog` (existing component) with destructive styling
+   - On confirm: calls `tasksApi.cancel(taskId)`, shows spinner, disables button
+   - Error toast above the action bar if cancel fails (dismissible)
+   - Passive "Cancelling..." indicator with spinner when `task.status === "cancelling"`
+   - Removed old cancel button that was on queued+locked without confirmation
+
+2. **Task Card** (`apps/dashboard/src/components/task-card.tsx`):
+   - Added compact Cancel button (pill style) in footer, visible for `locked` tasks
+   - `XCircle` icon from lucide-react, `Loader2` spinner during cancellation
+   - `e.stopPropagation()` prevents card onClick from firing when clicking Cancel
+   - Confirmation dialog with task title in message
+   - Error feedback shown inline above footer
+   - Cancelling status indicator when `task.status === "cancelling"`
+   - New `onCancelComplete` callback prop for parent to refetch
+
+3. **Tasks Page** (`apps/dashboard/src/app/tasks/page.tsx`):
+   - Passes `onCancelComplete={refetchTasks}` to TaskCard
+
+### Key Decisions
+- **Cancel only for `locked` (running) tasks** — The issue specifies "when status=running". The data model uses `locked` for running tasks. Queued tasks don't need cancel (they haven't started).
+- **Reused existing `ConfirmDialog`** — No need for a new component; the existing one supports destructive styling.
+- **Reused existing `tasksApi.cancel()`** — The cancel API route and client method already existed from prior work.
+- **Inline error over toast** — Keeps error context visible near the action that failed, no external toast library needed.
+- **`stopPropagation` on card cancel** — Prevents the card's onClick (which opens the detail modal) from firing when the user clicks Cancel.
+
+### Acceptance Criteria
+- [x] Cancel button visible in task detail modal
+- [x] Cancel button visible in task card
+- [x] Button appears only when status=running (locked)
+- [x] POST /api/tasks/:id/cancel called on click
+- [x] Cancelling state shown with spinner
+- [x] Button disabled after click (prevents double-click)
+- [x] Confirmation dialog before cancel
+- [x] UI updated when cancellation completes (refetch + status polling)
+- [x] Error handled and displayed to user
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/dashboard/src/components/task-detail-modal.tsx` | Cancel button with confirm dialog, cancelling state, error handling |
+| `apps/dashboard/src/components/task-card.tsx` | Cancel button (compact), confirm dialog, cancelling state, error handling |
+| `apps/dashboard/src/app/tasks/page.tsx` | Pass `onCancelComplete` to TaskCard |
+
+### Commits
+- `3c23f0b` — feat(dashboard): cancel button on tasks — confirmation dialog, cancelling state, error handling (#87)
+
 ## 2026-02-15 — Issue #86: Task Timeout Recovery
 
 ### Summary
