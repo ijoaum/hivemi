@@ -11,6 +11,7 @@ import { agentsApi, teamsApi, rolesApi, deployApi, type Agent, type Team, type R
 import { cn } from "@/lib/utils";
 import { Hexagon } from "lucide-react";
 import { RoleIcon } from "@/components/role-icon";
+import { MonthlyCostCard } from "@/components/monthly-cost-card";
 
 const teamColors: Record<string, string> = {
   amber: "border-amber-300 dark:border-amber-700 bg-gradient-to-br from-white via-amber-50 to-amber-100 dark:from-amber-900/40 dark:via-amber-950/30 dark:to-amber-900/20 shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.8),inset_0_-1px_2px_0_rgba(0,0,0,0.05),0_4px_12px_0_rgba(0,0,0,0.08)] dark:shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.15),inset_0_-1px_2px_0_rgba(0,0,0,0.2),0_4px_12px_0_rgba(0,0,0,0.3)]",
@@ -384,12 +385,7 @@ export default function Home() {
             {isLoading ? "..." : stats.idle}
           </p>
         </div>
-        <div className="bg-white dark:bg-gray-900 rounded-xl p-4 md:p-5 border border-gray-200 dark:border-gray-800">
-          <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Teams</p>
-          <p className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mt-1">
-            {isLoading ? "..." : teams.length}
-          </p>
-        </div>
+        <MonthlyCostCard />
       </div>
 
       {/* Deploy Modal */}
