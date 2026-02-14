@@ -1,5 +1,118 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #92: Bootstrapper — Inject Model e Auth
+
+### Summary
+Implemented model configuration and auth profile injection for the bootstrapper. Created a provider registry supporting Anthropic, OpenAI, Google, GitHub Copilot, and custom providers with automatic provider detection from model strings, API key resolution via SecretProvider, format and live validation, fallback model configuration, and secure logging. Enhanced the OpenClaw gateway config to support fallback models and integrated auth profiles into the configure phase so resolved API keys flow into the daemon .env file. 97 new tests.
+
+### What was done
+
+1. **Model Config Module** (`packages/bootstrapper/src/model-config.ts`):
+   - `LLMProviderName` type: `"anthropic" | "openai" | "google" | "github-copilot" | "custom"`
+   - `PROVIDER_REGISTRY`: default config per provider (env var, display name, validation flag)
+     - Anthropic → `ANTHROPIC_API_KEY`, validates prefix `sk-ant-`
+     - OpenAI → `OPENAI_API_KEY`, validates prefix `sk-`
+     - Google → `GOOGLE_API_KEY`, validates minimum length
+     - GitHub Copilot → `GITHUB_TOKEN`, skips format validation (device flow)
+     - Custom → `LLM_API_KEY` + `LLM_BASE_URL`, no validation
+   - `detectProvider(model)`: extract provider from model string
+     - Explicit prefix: `"anthropic/claude-sonnet-4-5"` → `"anthropic"`
+     - Implicit: `"gpt-4o"` → `"openai"` via `MODEL_PROVIDER_MAP`
+     - Unknown → `"custom"`
+   - `extractModelName(model)`: strip provider prefix
+   - `getRequiredProviders(models)`: deduplicated provider set from model list
+   - `getProviderConfig(provider, overrides)`: merge defaults with caller overrides
+   - `validateKeyFormat(provider, key)`: local format check (prefix, length)
+   - `validateKeyLive(provider, key, baseUrl, timeout)`: lightweight API call validation
+     - Anthropic: `POST /v1/messages` (max_tokens=1)
+     - OpenAI: `GET /v1/models`
+     - Google: `GET /v1beta/models?key=`
+     - Network errors → valid (benefit of the doubt)
+     - Timeout → invalid (AbortError)
+   - `buildModelConfig(options)`: resolve primary + fallback models → providers → configs
+   - `resolveAuthProfiles(providerConfigs, secretProvider)`: resolve API keys via ISecretProvider, validate format, return `AuthProfile[]`
+   - `validateAuthProfiles(profiles)`: live validation of all profiles
+   - `authProfilesToEnv(profiles)`: convert to `Map<envVar, value>` for daemon .env
+   - `generateFallbackConfig(fallbacks)`: generate `{ models: [...] }` for OpenClaw config
+   - `logModelAuthSummary()`: log model/auth config with masked secrets
+
+2. **Enhanced OpenClaw Config** (`packages/bootstrapper/src/openclaw-config.ts`):
+   - `OpenClawGatewayConfig.llm.fallbacks`: optional `{ models: string[] }` section
+   - `OpenClawConfigOptions.fallbackModels`: optional fallback models list
+   - `generateOpenClawConfig()`: includes `fallbacks` in `llm` section when provided
+   - `logConfigSummary()`: logs fallback models when present
+
+3. **Enhanced Configure Phase** (`packages/bootstrapper/src/phases/configure.ts`):
+   - `ConfigureOpenClawOptions`: added `fallbackModels`, `providerOverrides`, `validateKeysLive`, `authProfiles`
+   - `configureOpenClaw()`: now returns `{ authEnvVars: Map<string, string> }`
+     - Accepts pre-resolved `authProfiles`
+     - Optionally runs `validateAuthProfiles()` when `validateKeysLive=true`
+     - Passes `fallbackModels` to `generateOpenClawConfig()`
+   - `configure()`: merges `authEnvVars` from configureOpenClaw with `injectionResult.envSecrets` before passing to `installDaemon`
+
+4. **Updated Exports** (`packages/bootstrapper/src/index.ts`):
+   - All model-config types and functions exported
+
+5. **97 new tests** (`packages/bootstrapper/src/__tests__/model-auth-config.test.ts`):
+   - **detectProvider (12)**: explicit prefix (4 providers), implicit model names (5), unknown, empty, case-insensitive
+   - **extractModelName (4)**: strip prefix, no prefix, multiple slashes, empty
+   - **getRequiredProviders (4)**: unique, dedup, empty, mixed
+   - **PROVIDER_REGISTRY (6)**: anthropic, openai, google, github-copilot, custom, required fields
+   - **getProviderConfig (3)**: default, overrides, unknown
+   - **validateKeyFormat (12)**: anthropic valid/wrong prefix/short, openai valid/wrong/short, google valid/short, github valid, empty all, whitespace, custom
+   - **validateKeyLive (12)**: anthropic 200/401, openai 200/401, google 200/403, github skip, custom skip, network error, timeout, custom URL, 400 auth pass
+   - **buildModelConfig (4)**: single, fallbacks, overrides, all providers
+   - **resolveAuthProfiles (7)**: single, multiple, no secret ref, missing secret, format fail, skip validation, base URL
+   - **validateAuthProfiles (4)**: all valid, one fails, mixed, empty
+   - **authProfilesToEnv (3)**: basic, base URL, empty
+   - **generateFallbackConfig (3)**: empty, multiple, single
+   - **logModelAuthSummary (3)**: full, no fallbacks, base URL
+   - **OpenClaw config with fallbacks (5)**: includes, omits, empty, validates, round-trip
+   - **configureOpenClaw integration (5)**: auth env vars, no profiles, fallbacks in config, live fail, live pass
+   - **Full integration (4)**: anthropic+openai, github-copilot, custom+baseURL, full configureOpenClaw flow
+   - **Security (2)**: resolveAuthProfiles no leak, logModelAuthSummary no leak
+   - **Edge cases (6)**: unknown pattern, empty fallbacks, single char, slash-only, provider dedup, same-provider fallback
+
+### Key Decisions
+- **Provider registry with overrides** — default configs per provider avoid repetitive configuration while `providerOverrides` allows full customization (custom secret refs, base URLs, etc.). Follows the same pattern as security config.
+- **Two-tier validation** — `validateKeyFormat()` is local and fast (catches obvious errors like wrong prefix). `validateKeyLive()` makes an actual API call. Deploy config chooses which to use via `validateKeysLive` flag. Format validation is always on by default; live is opt-in.
+- **configureOpenClaw returns auth env vars** — instead of writing them to the .env directly (which would break separation of concerns), the function returns them so the `configure()` orchestrator can merge with other env vars. Backward compatible — callers that don't use the return value are unaffected.
+- **Network errors during live validation = valid** — the control plane might not have direct access to provider APIs (firewalls, VPN). A network error doesn't mean the key is invalid. AbortError (timeout) is the exception — it suggests the key was checked and something is wrong.
+- **Fallback models in OpenClaw config** — added `llm.fallbacks.models` array. This is a forward-looking feature — OpenClaw doesn't implement fallback routing yet, but the config is ready for when it does.
+- **Auth profiles can be pre-resolved** — the deploy orchestrator might want to resolve keys earlier in the pipeline. `configureOpenClaw` accepts `authProfiles` directly, avoiding double-resolution.
+
+### Acceptance Criteria
+- [x] Modelo configurado no openclaw.json baseado em deploy config
+- [x] Auth profiles injetados corretamente (env vars for daemon .env)
+- [x] SecretProvider usado para buscar API keys (resolveAuthProfiles)
+- [x] Suporte para Anthropic, OpenAI, Google, GitHub Copilot, Custom
+- [x] Fallback models configurados (llm.fallbacks.models)
+- [x] Validação de API keys implementada (format + live)
+- [x] Logs de configuração gerados (sem vazar secrets — maskSecret)
+- [x] Agente pode usar modelo configurado após deploy (config + env vars)
+- [x] Testes de autenticação passando (97 new, 284 total)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/bootstrapper/src/model-config.ts` | NEW — provider registry, detection, auth profiles, validation, fallback config |
+| `packages/bootstrapper/src/openclaw-config.ts` | Enhanced — fallback models in config type, generation, and logging |
+| `packages/bootstrapper/src/phases/configure.ts` | Enhanced — auth profiles, live validation, fallback models, returns authEnvVars |
+| `packages/bootstrapper/src/index.ts` | Export model-config types and functions |
+| `packages/bootstrapper/src/__tests__/model-auth-config.test.ts` | NEW — 97 tests |
+
+### Commits
+- `3dd5aac` — feat(bootstrapper): inject model and auth — provider registry, key validation, fallback models (#92)
+
+### Next
+- Wire model config into DeployOrchestrator (pass provider overrides from deploy config)
+- Add model cost tracking per provider (for cost estimation)
+- Implement fallback routing in OpenClaw gateway (use the configured fallbacks)
+- Add key rotation support (update API keys without redeploy)
+- Per-agent model overrides via Registry (change model without redeploy)
+
+---
+
 ## 2026-02-15 — Issue #91: Bootstrapper — Config OpenClaw Gateway
 
 ### Summary
