@@ -1,5 +1,98 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #77: Agent Card: Telemetria Real
+
+### Summary
+Replaced all mock data in the agent card component with real telemetry from the Registry. The agent card now shows live CPU/RAM health indicators, real task counts, daemon uptime, configured model, and cloud provider info. A detailed tooltip on hover shows comprehensive metrics including disk usage, daemon version, OpenClaw status, LLM usage stats, and task breakdowns.
+
+### What was done
+
+1. **Registry — Extended Agent List Response** (`apps/registry/src/routes.ts`):
+   - `GET /api/agents` and `GET /api/agents/:id` now return `version`, `cloud`, and `deployId` fields
+   - These were already in the DB schema but weren't selected in the list/detail queries
+
+2. **Dashboard — Telemetry API Client** (`apps/dashboard/src/lib/api.ts`):
+   - New types: `TelemetryInfra`, `TelemetryLlm`, `TelemetryTasks`, `TelemetryDaemon`, `AgentTelemetry`
+   - New `telemetryApi` object with `latest(agentId)` and `history(agentId, params?)` methods
+   - Extended `Agent` interface with `version`, `cloud`, `deployId` fields
+
+3. **Dashboard — `useAgentTelemetry` hook** (`apps/dashboard/src/hooks/use-agent-telemetry.ts`):
+   - Fetches latest telemetry for all visible agents in parallel via `Promise.allSettled`
+   - Returns `Record<string, AgentTelemetry>` map keyed by agent ID
+   - Auto-refreshes every 10 seconds (configurable)
+   - Merges results incrementally (keeps old data for agents not in current batch)
+
+4. **Dashboard — Rewritten `AgentCard`** (`apps/dashboard/src/components/agent-card.tsx`):
+   - **Removed mock data imports** — no more `formatUptime` from `mock-agents`
+   - **Health indicator**: dot color changes based on average of CPU + RAM usage:
+     - Green: < 60% average
+     - Yellow: 60-80% average
+     - Red: > 80% average
+   - **Tasks today**: real count from telemetry (`completed + failed`)
+   - **Uptime**: real daemon uptime from telemetry, formatted as "2d 14h", "5h 30m", etc.
+   - **Model**: shows configured LLM model name
+   - **Cloud provider**: shows provider icon (🌊 DO, ☁️ GCP) + region
+   - **Opacity**: offline, unreachable, and destroyed agents are dimmed (opacity-60)
+   - **Tooltip on hover**: shows detailed metrics panel with:
+     - Health status (colored label)
+     - CPU percentage
+     - RAM usage (used/total + percentage)
+     - Disk usage (used/total)
+     - Daemon uptime, version
+     - OpenClaw status (green/red)
+     - Model name
+     - Cloud provider and region
+     - LLM usage (requests, tokens, avg latency)
+     - Task breakdown (completed, failed, active)
+   - Local `formatUptime()` function — no external dependency
+
+5. **Dashboard — Updated Home Page** (`apps/dashboard/src/app/page.tsx`):
+   - Imported `useAgentTelemetry` hook
+   - Removed mock `progress`, `uptime`, `tasksToday` generation (was `Math.random()`)
+   - Computes `agentIds` list and passes to `useAgentTelemetry`
+   - Passes `telemetry={telemetryMap[agent.id]}` to each `AgentCard`
+
+6. **Dashboard — Updated Agent Type** (`apps/dashboard/src/types/agent.ts`):
+   - Added `model?: string`, `cloud?` fields to the display `Agent` interface
+
+### Key Decisions
+- **Separate telemetry hook** — telemetry fetching is decoupled from the agent list API. This avoids N+1 on the main agents query and keeps the telemetry refresh cycle independent (10s) from agent list refresh (5s).
+- **`Promise.allSettled` for parallel fetches** — if one agent's telemetry fails, others still load. Graceful degradation — card shows "—" for missing data.
+- **Health indicator replaces static status dot** — when telemetry is available, the dot color reflects real CPU+RAM health instead of just status. Falls back to status-based dot color when no telemetry.
+- **Tooltip over separate detail page** — quick hover for power users who want metrics at a glance without navigating away from the hive overview.
+- **Local `formatUptime`** — moved into the component file to avoid importing from `mock-agents`. The mock file is still there for other consumers but the card is fully independent.
+- **No mock data in production path** — `Math.random()` calls completely removed. Fields default to 0/"—" until telemetry arrives.
+
+### Acceptance Criteria
+- [x] Dados reais sendo exibidos (não mock)
+- [x] Health indicator muda de cor conforme CPU+RAM
+- [x] Tasks today mostra número correto (completed + failed from telemetry)
+- [x] Uptime formatado e atualizado (from daemon.uptime)
+- [x] Modelo correto sendo exibido
+- [x] Card esmaecido quando agente offline (opacity-60)
+- [x] Ícone de provider e região visíveis
+- [x] Tooltip com informações detalhadas
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/registry/src/routes.ts` | +version, +cloud, +deployId in GET /api/agents |
+| `apps/dashboard/src/lib/api.ts` | +telemetryApi, +AgentTelemetry types, extended Agent |
+| `apps/dashboard/src/hooks/use-agent-telemetry.ts` | NEW — telemetry fetching hook |
+| `apps/dashboard/src/components/agent-card.tsx` | Rewritten — real telemetry, health indicator, tooltip |
+| `apps/dashboard/src/app/page.tsx` | Wire telemetry hook, remove mock data |
+| `apps/dashboard/src/types/agent.ts` | +model, +cloud fields |
+
+### Commits
+- `5222e08` — feat(dashboard): real telemetry in agent cards — health indicator, tasks, uptime, model, cloud provider, tooltip (#77)
+
+### Next
+- Agent detail page telemetry charts (CPU/RAM over time using telemetry history)
+- Telemetry-based auto-refresh rate (slower when all agents idle)
+- Alert system for sustained red health indicators
+
+---
+
 ## 2026-02-15 — Issue #76: Deploy Modal: Stepper de Progresso
 
 ### Summary
