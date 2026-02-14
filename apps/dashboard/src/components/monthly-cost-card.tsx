@@ -84,7 +84,9 @@ export function MonthlyCostCard() {
           <div className="space-y-1.5">
             {breakdown.map((item, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-gray-600 dark:text-gray-400 truncate mr-2">{item.name}</span>
+                <span className="text-gray-600 dark:text-gray-400 truncate mr-2">
+                  {item.agentName || item.name}
+                </span>
                 <span className="text-gray-900 dark:text-white font-medium whitespace-nowrap">
                   {formatCurrencyFull(item.monthlyCostUsd)}/mo
                 </span>

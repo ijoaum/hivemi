@@ -266,6 +266,8 @@ export interface InstanceCostBreakdown {
   monthlyCostUsd: number;
   daysRunning: number;
   accumulatedCostUsd: number;
+  agentId?: string;
+  agentName?: string;
 }
 
 export interface CostReport {
