@@ -11,6 +11,7 @@ import type {
   HeartbeatResult,
   IRegistryClient,
   LogEntry,
+  ProgressPayload,
   SubtaskPayload,
   TaskResult,
   TelemetrySnapshot,
@@ -402,6 +403,29 @@ export class RegistryClient implements IRegistryClient {
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Log batch failed: ${res.status} ${text}`);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Report progress — POST /api/tasks/:id/progress
+  //
+  // Issue #89: Report tool call steps as progress to the Registry.
+  // Non-critical — errors are thrown for the caller (ProgressReporter)
+  // to handle with retry logic.
+  // -------------------------------------------------------------------------
+
+  async reportProgress(taskId: string, progress: ProgressPayload): Promise<void> {
+    const body = {
+      step: progress.step,
+      timestamp: progress.timestamp.toISOString(),
+      ...(progress.toolCall ? { toolCall: progress.toolCall } : {}),
+    };
+
+    const res = await this.request("POST", `/api/tasks/${taskId}/progress`, body);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Progress report failed: ${res.status} ${text}`);
     }
   }
 

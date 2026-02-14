@@ -84,6 +84,7 @@ function makeMockRegistry(): IRegistryClient {
     sendTelemetry: vi.fn().mockResolvedValue(undefined),
     sendLogs: vi.fn().mockResolvedValue(undefined),
     setOffline: vi.fn().mockResolvedValue(undefined),
+    reportProgress: vi.fn().mockResolvedValue(undefined),
   };
 }
 

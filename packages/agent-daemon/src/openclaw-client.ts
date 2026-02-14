@@ -12,6 +12,7 @@
 import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import type { DaemonConfig, DaemonLogger, IOpenClawClient, OpenClawStatus } from "./types.js";
+import { OpenClawInterceptor, type ToolCallCallback } from "./openclaw-interceptor.js";
 
 const execAsync = promisify(execCb);
 
@@ -116,12 +117,19 @@ export class OpenClawClient implements IOpenClawClient {
   /** Active AbortController for the current task (used for cancellation) */
   private activeAbortController: AbortController | null = null;
 
+  /** Tool call interceptor for progress reporting (Issue #89) */
+  private readonly interceptor: OpenClawInterceptor;
+
   constructor(config: DaemonConfig, logger: DaemonLogger) {
     this.baseUrl = (config.openclawUrl || "http://127.0.0.1:4100").replace(/\/$/, "");
     this.apiToken = config.openclawApiToken;
     this.logger = logger;
     // Streaming is the default — avoids Node fetch timeout on long tasks
     this.useStreaming = config.useStreaming !== false;
+    // Initialize interceptor (Issue #89)
+    this.interceptor = new OpenClawInterceptor(logger, {
+      enabled: config.progressReportingEnabled !== false,
+    });
   }
 
   private headers(): Record<string, string> {
@@ -135,6 +143,21 @@ export class OpenClawClient implements IOpenClawClient {
   /** Get the current session ID (for testing/debugging) */
   getSessionId(): string | null {
     return this.lastSessionId;
+  }
+
+  /**
+   * Register a callback to be invoked for each tool call detected during
+   * streaming execution (Issue #89). The callback receives a ToolCallEvent.
+   */
+  onToolCall(callback: ToolCallCallback): void {
+    this.interceptor.onToolCall(callback);
+  }
+
+  /**
+   * Get the interceptor instance (for testing/advanced use).
+   */
+  getInterceptor(): OpenClawInterceptor {
+    return this.interceptor;
   }
 
   // -------------------------------------------------------------------------
@@ -214,6 +237,9 @@ export class OpenClawClient implements IOpenClawClient {
     this.activeAbortController = controller;
     const timeoutId = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
 
+    // Reset interceptor state for new task
+    this.interceptor.reset();
+
     try {
       const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
         method: "POST",
@@ -231,18 +257,21 @@ export class OpenClawClient implements IOpenClawClient {
         throw new Error("OpenClaw returned no response body for streaming request");
       }
 
-      // Parse the SSE stream
+      // Parse the SSE stream with interceptor integration (Issue #89)
       const reader = res.body.getReader();
       let lastProgressLog = Date.now();
 
-      const { content, sessionId } = await parseSSEStream(reader, (_chunk, accumulated) => {
-        // Log progress every 30 seconds
-        const now = Date.now();
-        if (now - lastProgressLog >= 30_000) {
-          this.logger.debug(`Streaming progress: ${accumulated.length} chars received`);
-          lastProgressLog = now;
-        }
-      });
+      const { content, sessionId } = await this.parseSSEStreamWithInterceptor(
+        reader,
+        (_chunk, accumulated) => {
+          // Log progress every 30 seconds
+          const now = Date.now();
+          if (now - lastProgressLog >= 30_000) {
+            this.logger.debug(`Streaming progress: ${accumulated.length} chars received`);
+            lastProgressLog = now;
+          }
+        },
+      );
 
       // Capture session ID for cleanup
       if (sessionId) {
@@ -262,6 +291,74 @@ export class OpenClawClient implements IOpenClawClient {
       clearTimeout(timeoutId);
       this.activeAbortController = null;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // SSE Stream parsing with interceptor — Issue #89
+  //
+  // Replaces the standalone parseSSEStream for streaming execution.
+  // Routes each SSE data event through the OpenClawInterceptor to detect
+  // tool calls, while still accumulating content for the task result.
+  // -------------------------------------------------------------------------
+
+  private async parseSSEStreamWithInterceptor(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    onProgress?: StreamProgressCallback,
+  ): Promise<{ content: string; sessionId: string | null }> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let sessionId: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        // Flush remaining tool calls at stream end
+        this.interceptor.flush();
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Skip empty lines and comments
+        if (!trimmed || trimmed.startsWith(":")) continue;
+
+        // Parse data lines
+        if (trimmed.startsWith("data: ")) {
+          const data = trimmed.slice(6);
+
+          // Process through interceptor (handles [DONE], tool calls, and content)
+          const contentDelta = this.interceptor.processChunk(data);
+
+          if (contentDelta) {
+            content += contentDelta;
+            onProgress?.(contentDelta, content);
+          }
+
+          // Extract session ID from raw data (interceptor doesn't track this)
+          if (!sessionId && data !== "[DONE]") {
+            try {
+              const parsed = JSON.parse(data) as { id?: string };
+              if (parsed.id) {
+                sessionId = parsed.id;
+              }
+            } catch {
+              // Skip invalid JSON for session ID extraction
+            }
+          }
+        }
+      }
+    }
+
+    return { content, sessionId };
   }
 
   // -------------------------------------------------------------------------

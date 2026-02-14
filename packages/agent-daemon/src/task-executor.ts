@@ -23,6 +23,7 @@ import type {
 } from "./types.js";
 import { getEffectiveTimeout } from "./types.js";
 import { parseTaskOutput, type ParsedOutput } from "./output-parser.js";
+import { ProgressReporter } from "./progress-reporter.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,11 +63,12 @@ export class TaskExecutor {
   private readonly openclaw: IOpenClawClient;
   private readonly logger: DaemonLogger;
   private readonly logBuffer: LogEntry[];
+  private readonly progressReporter: ProgressReporter;
 
   constructor(
     config: DaemonConfig,
     openclaw: IOpenClawClient,
-    _registry: IRegistryClient,
+    registry: IRegistryClient,
     logger: DaemonLogger,
     logBuffer: LogEntry[],
     executorConfig: Partial<TaskExecutorConfig> = {},
@@ -76,6 +78,19 @@ export class TaskExecutor {
     this.openclaw = openclaw;
     this.logger = logger;
     this.logBuffer = logBuffer;
+
+    // Issue #89: Initialize progress reporter
+    this.progressReporter = new ProgressReporter(registry, logger, {
+      enabled: config.progressReportingEnabled !== false,
+      debounceMs: config.progressDebounceMs ?? 2_000,
+    });
+
+    // Wire up tool call interception if the OpenClaw client supports it
+    if (typeof (openclaw as any).onToolCall === "function") {
+      (openclaw as any).onToolCall((event: any) => {
+        this.progressReporter.handleToolCall(event);
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -88,6 +103,9 @@ export class TaskExecutor {
 
     this.logger.info(`Executing task: ${task.title} (timeout: ${effectiveTimeout}ms)`, { taskId: task.id });
     this.addLog("info", `Executing task: ${task.title} (timeout: ${effectiveTimeout}ms, role: ${this.config.roleName || "unknown"})`, task.id, "task-executor");
+
+    // Issue #89: Start progress reporting for this task
+    this.progressReporter.startTask(task.id);
 
     try {
       // 1. Pre-flight health check
@@ -162,7 +180,21 @@ export class TaskExecutor {
       // Re-throw non-timeout errors for TaskPoller to handle
       throw err;
     } finally {
-      // 6. Clean up session after each task (success or failure)
+      // 6. Stop progress reporting (flush pending reports)
+      try {
+        await this.progressReporter.stopTask();
+        const metrics = this.progressReporter.getMetrics();
+        if (metrics.sent > 0 || metrics.failed > 0) {
+          this.logger.debug(`Progress reporting: ${metrics.sent} sent, ${metrics.failed} failed`, { taskId: task.id });
+        }
+      } catch (progressErr) {
+        this.logger.warn("Progress reporter cleanup failed (non-critical)", {
+          taskId: task.id,
+          error: progressErr instanceof Error ? progressErr.message : String(progressErr),
+        });
+      }
+
+      // 7. Clean up session after each task (success or failure)
       try {
         await this.openclaw.destroySession();
         this.logger.debug("Session destroyed after task", { taskId: task.id });

@@ -76,6 +76,15 @@ export interface DaemonConfig {
    * Streaming prevents Node.js fetch timeout on long-running tasks (developer = 30 min).
    * Set to false only for testing or if the OpenClaw gateway doesn't support streaming. */
   useStreaming?: boolean;
+
+  /** Whether to report tool calls as progress steps to the Registry (default: true).
+   * Issue #89: When enabled, the daemon intercepts tool calls from the OpenClaw
+   * streaming response and sends them as progress steps via POST /api/tasks/:id/progress. */
+  progressReportingEnabled?: boolean;
+
+  /** Minimum interval between progress reports in ms (default: 2000).
+   * Debounce to avoid flooding the Registry with progress updates. */
+  progressDebounceMs?: number;
 }
 
 /** Default timeouts per role in ms */
@@ -160,6 +169,8 @@ export function loadConfigFromEnv(env: Record<string, string | undefined>): Daem
     roleTimeouts: parseRoleTimeouts(env["ROLE_TIMEOUTS"]),
     shutdownTimeoutMs: optionalInt("SHUTDOWN_TIMEOUT_MS", 55_000),
     useStreaming: env["USE_STREAMING"] !== "false",
+    progressReportingEnabled: env["PROGRESS_REPORTING"] !== "false",
+    progressDebounceMs: optionalInt("PROGRESS_DEBOUNCE_MS", 2_000),
   };
 }
 
@@ -290,6 +301,21 @@ export interface IRegistryClient {
 
   /** PUT /api/agents/:id with status=offline — graceful shutdown */
   setOffline(): Promise<void>;
+
+  /** POST /api/tasks/:id/progress — report a progress step for a task (Issue #89) */
+  reportProgress(taskId: string, progress: ProgressPayload): Promise<void>;
+}
+
+/**
+ * Payload for reporting task progress steps (Issue #89).
+ */
+export interface ProgressPayload {
+  /** Human-readable description of the step */
+  step: string;
+  /** Timestamp when the step occurred */
+  timestamp: Date;
+  /** Optional tool/function call name */
+  toolCall?: string;
 }
 
 // ---------------------------------------------------------------------------
