@@ -1,5 +1,92 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #76: Deploy Modal: Stepper de Progresso
+
+### Summary
+Transformed the deploy modal from a simple form → success/error overlay into a full two-view modal with a vertical progress stepper that consumes the SSE deploy stream in real-time. Users now see each of the 5 deploy phases (Provisioning, Installing, Configuring, Registering, Ready) with live status icons, duration timers, and error messages. Closing the modal during an active deploy shows a persistent toast notification.
+
+### What was done
+
+1. **`useDeployStream` hook** (`apps/dashboard/src/hooks/use-deploy-stream.ts`):
+   - Connects to `/api/deploy/[id]/stream` via `EventSource`
+   - Listens for named events: `phase_update`, `status_change`, `log`, `error`, `complete`
+   - Tracks `status`, `phases[]`, `error`, `connected`, `finished`, `agentId`
+   - Provides `connect(deployId)`, `disconnect()`, `reset()` methods
+   - Auto-closes EventSource on terminal events (complete/error)
+   - Default phases initialized as 5 pending steps
+
+2. **Rewritten `DeployAgentModal`** (`apps/dashboard/src/components/deploy-agent-modal.tsx`):
+   - **Two views**: `form` (original deploy form) and `stepper` (progress view)
+   - **Form view**: Identical to original — name, role, team, model, auto-start
+   - **Stepper view**: Vertical stepper with phase-by-phase progress
+   - **Phase icons**: `Circle` (pending), `Loader2` spinning (active), `CheckCircle` (completed), `AlertCircle` (failed)
+   - **Phase labels**: Human-readable names ("Provisioning VM", "Installing Dependencies", etc.)
+   - **Phase descriptions**: Shown for active phase ("Creating virtual machine on cloud provider", etc.)
+   - **Live duration**: Timer ticks every second for active phases, shows elapsed time
+   - **Error display**: Phase-level error messages shown inline
+   - **Connector lines**: Green for completed, gray for pending
+   - **Status header**: Shows deploying/success/failed state with appropriate icons
+   - **Action buttons**:
+     - Failed: Retry + Destroy
+     - Success: Close + View Agent (navigates to `/agents/[id]`)
+     - Deploying: Close with "deploy continues in background" hint
+   - **Props**: Added `onRetry`, `onDestroy`, `activeDeployId` for reopen support
+   - **Return type**: `onDeploy` now returns `{ deployId, agentId }` for SSE connection
+
+3. **`DeployToast` component** (exported from deploy-agent-modal.tsx):
+   - Persistent bottom-right toast when modal is closed during active deploy
+   - Shows spinning loader (deploying), checkmark (success), or error icon (failed)
+   - "View" / "Details" button to reopen modal
+   - Dismiss button for completed/failed states
+   - Slide-in animation
+
+4. **Updated `page.tsx`** (`apps/dashboard/src/app/page.tsx`):
+   - `handleDeploy` now calls `deployApi.start()` (Manager API) instead of `agentsApi.create()`
+   - `handleDeployRetry` and `handleDeployDestroy` handlers
+   - `handleDeployModalClose` — shows toast if deploy in progress, polls status every 5s
+   - Toast auto-dismisses after 5s on success
+   - `handleToastReopen` — reopens modal with `activeDeployId` to resume progress view
+   - `activeDeployId` state tracks current deploy for modal reopen
+
+5. **API client additions** (`apps/dashboard/src/lib/api.ts`):
+   - `deployApi.start(data)` — POST /api/deploy → returns `{ deployId, agentId, message }`
+   - `deployApi.retry(id)` — POST /api/deploy/:id/retry → returns `{ deployId }`
+
+### Key Decisions
+- **Two-view modal over separate component** — keeping form + stepper in one modal provides natural UX flow (fill form → see progress). The `view` state controls which is shown.
+- **EventSource over fetch+parse** — browser-native SSE reconnection is more reliable. Named events (`addEventListener`) match the backend's `event:` field exactly.
+- **Toast with background polling** — when the modal is closed, we can't rely on SSE (EventSource lives in the hook, which unmounts). Simple 5s interval polling of `deployApi.get()` updates the toast.
+- **Phase durations use live timer** — a `setInterval` ticks every 1s when any phase is active, triggering re-render for the duration display. Stops automatically when no phases are active.
+- **Deploy API instead of direct agent create** — the form now calls the Manager's deploy endpoint which triggers the full provisioning pipeline. The old `agentsApi.create` was a placeholder.
+
+### Acceptance Criteria
+- [x] Stepper vertical com 5 fases visível após clicar Deploy
+- [x] Ícones mudam conforme progresso (spinner → check/error)
+- [x] Duração e mensagens aparecem em tempo real
+- [x] SSE stream sendo consumido corretamente
+- [x] Botões Retry/Destroy aparecem em caso de erro
+- [x] Botão View Agent redireciona para página do agente
+- [x] Toast persistente quando modal é fechado durante deploy
+- [x] Possível reabrir modal e ver progresso atual
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/dashboard/src/hooks/use-deploy-stream.ts` | NEW — SSE deploy stream consumer hook |
+| `apps/dashboard/src/components/deploy-agent-modal.tsx` | Rewritten — form + stepper views, toast |
+| `apps/dashboard/src/app/page.tsx` | Deploy API integration, toast, reopen logic |
+| `apps/dashboard/src/lib/api.ts` | +deployApi.start(), +deployApi.retry() |
+
+### Commits
+- `cb137fc` — feat(dashboard): deploy modal stepper with SSE progress, toast, retry/destroy (#76)
+
+### Next
+- Integration with actual cloud deploy (end-to-end test)
+- Deploy history page (list all deploys with status)
+- Agent detail page deploy status section
+
+---
+
 ## 2026-02-14 — Issue #75: Settings: Cloud Config UI
 
 ### Summary
