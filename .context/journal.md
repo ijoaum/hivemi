@@ -1,5 +1,118 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #85: Task Cancellation via Heartbeat
+
+### Summary
+Implemented task cancellation via the heartbeat protocol. When a user cancels a running task, the Registry marks it as "cancelling" and signals the Daemon through the heartbeat response. The Daemon detects the signal, kills the OpenClaw process, and reports the task as cancelled. Smart cancel logic differentiates between queued tasks (immediate cancel) and locked tasks (cancel via heartbeat signal). 46 new tests covering the full flow.
+
+### What was done
+
+1. **Protocol — HeartbeatResponseSchema** (`packages/protocol/src/types.ts`):
+   - Added `cancelTask` field: `z.string().uuid().nullable().optional()`
+   - When a task is marked as "cancelling", the heartbeat response includes the task ID
+   - Backward compatible — old daemons that don't check cancelTask still work
+
+2. **Registry Heartbeat — cancelTask Signal** (`apps/registry/src/routes/heartbeat.ts`):
+   - After updating agent heartbeat data, checks if `currentTaskId` matches a task with "cancelling" status
+   - If found, includes `cancelTask: taskId` in the response
+   - Non-critical check — if DB query fails, heartbeat still succeeds without cancelTask
+   - Logs when cancelTask is included in response
+
+3. **Task Cancel Endpoint — Smart Cancel** (`apps/registry/src/routes/tasks.ts`):
+   - New `PUT /:id/cancel` endpoint in task queue routes
+   - Status transition logic:
+     - `queued` → `cancelled` (immediate, no daemon involvement)
+     - `locked` → `cancelling` (daemon will handle via heartbeat)
+     - `cancelling` → idempotent (already cancelling)
+     - `completed/failed/cancelled` → 409 Conflict
+   - Also updated `POST /api/tasks/:id/cancel` in main routes with same logic
+
+4. **Daemon Types — HeartbeatResult** (`packages/agent-daemon/src/types.ts`):
+   - New `HeartbeatResult` interface: `{ ack: boolean; cancelTask: string | null }`
+   - Updated `IRegistryClient.heartbeat()` return type from `boolean` to `HeartbeatResult`
+
+5. **Daemon RegistryClient — Parse cancelTask** (`packages/agent-daemon/src/registry-client.ts`):
+   - `heartbeat()` now returns `HeartbeatResult` instead of `boolean`
+   - Parses JSON response to extract `cancelTask` field
+   - Handles JSON parse failure gracefully (returns `cancelTask: null`)
+   - New `updateTaskCancelled()` method: `PUT /api/tasks/:id` with `status: "cancelled"`
+
+6. **Daemon — Cancellation Handler** (`packages/agent-daemon/src/index.ts`):
+   - Heartbeat loop checks `result.cancelTask` against active task
+   - `handleTaskCancellation()`: orchestrates the full cancellation flow
+     1. Calls `openclaw.cancelExecution()` (aborts HTTP request)
+     2. Waits for task executor to notice (up to 10s timeout)
+     3. Reports task as failed via `reportTaskResult()`
+     4. Marks task as cancelled via `updateTaskCancelled()`
+   - `waitForTaskCancellation()`: polls activeTask every 200ms with timeout
+   - `CANCEL_KILL_TIMEOUT_MS = 10_000` (10 seconds SIGTERM → timeout)
+   - Comprehensive logging at each step
+
+7. **46 new tests** (`apps/registry/src/__tests__/task-cancellation.test.ts`):
+   - **Protocol (7)**: HeartbeatResponseSchema with/without cancelTask, TaskStatusSchema cancelling/cancelled
+   - **Registry Heartbeat (3)**: cancelTask when cancelling, no cancelTask when not cancelling, no cancelTask when idle
+   - **Status Transitions (4)**: queued→cancelled, locked→cancelling, terminal→409, cancelling→idempotent
+   - **HeartbeatResult (4)**: fields, null cancelTask, non-null cancelTask, ack false
+   - **Response Parsing (4)**: parse cancelTask, null when absent, 404 handling, malformed JSON
+   - **Cancellation Flow (5)**: match active task, mismatch, no active task, report then cancel, timeout
+   - **OpenClaw Cancel (2)**: abort controller, no-op when null
+   - **Edge Cases (6)**: already completed, ID mismatch, idempotent, shutdown, report failure, not found
+   - **Kill Timeout (3)**: task clears within timeout, timeout expires, constant value
+   - **Full Flow (3)**: locked→cancel→heartbeat→kill→cancelled, queued→immediate, completed→409
+   - **Logging (5)**: reception, cancellation, confirmation, timeout, registry report
+
+8. **Updated existing tests** (4 files):
+   - Updated mock registries to return `HeartbeatResult` instead of `boolean`
+   - Added `createSubtask` to mock where missing
+   - Fixed private-ip test heartbeat assertion
+
+### Key Decisions
+- **Smart cancel (locked vs queued)** — queued tasks can be cancelled immediately (no daemon involvement). Locked tasks need the daemon to kill the running process, so they go through `cancelling` → heartbeat signal → daemon kill → `cancelled`.
+- **cancelTask in heartbeat response** — reuses the existing heartbeat protocol instead of adding a new polling mechanism. Zero additional network calls — the daemon already sends heartbeats every 30s.
+- **HTTP abort for cancellation** — the OpenClaw client uses `AbortController.abort()` to kill the active streaming/non-streaming HTTP request. This is equivalent to SIGTERM for the network call. The 10s timeout acts as the SIGKILL equivalent.
+- **Report failed then mark cancelled** — the daemon first reports the task as "failed" (via the standard completion endpoint), then separately marks it as "cancelled". This ensures the task gets proper cleanup (lock fields cleared, agent status reset) even if the cancel-specific endpoint fails.
+- **HeartbeatResult type** — changed from `boolean` to a structured result object. This is a breaking change for existing mock registries in tests, but gives us extensibility for future heartbeat response fields.
+- **Non-critical DB check** — the cancellation check in the heartbeat handler is wrapped in try/catch. If it fails, the heartbeat still succeeds — we never break the heartbeat protocol for a nice-to-have feature.
+
+### Acceptance Criteria
+- [x] Heartbeat retorna cancelTask quando há task pra cancelar
+- [x] PUT /api/tasks/:id/cancel marca task como cancelling (locked) ou cancelled (queued)
+- [x] Daemon detecta cancelTask na resposta do heartbeat
+- [x] Processo OpenClaw é morto corretamente (HTTP abort via AbortController)
+- [x] Task marcada como cancelled após kill
+- [x] Timeout de kill funcionando (10s wait → report regardless)
+- [x] Logs de cancelamento gerados (at each step)
+- [x] Edge cases tratados sem crash (already completed, mismatch, not found, etc.)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/protocol/src/types.ts` | +cancelTask on HeartbeatResponseSchema |
+| `apps/registry/src/routes/heartbeat.ts` | Check for cancelling tasks, return cancelTask |
+| `apps/registry/src/routes/tasks.ts` | +PUT /:id/cancel — smart cancel endpoint |
+| `apps/registry/src/routes.ts` | Updated POST cancel with smart logic |
+| `packages/agent-daemon/src/types.ts` | +HeartbeatResult type, updated IRegistryClient |
+| `packages/agent-daemon/src/registry-client.ts` | Parse cancelTask, +updateTaskCancelled() |
+| `packages/agent-daemon/src/index.ts` | +handleTaskCancellation, +waitForTaskCancellation |
+| `apps/registry/src/__tests__/task-cancellation.test.ts` | NEW — 46 tests |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | Updated mocks for HeartbeatResult |
+| `packages/agent-daemon/src/__tests__/task-execution-flow.test.ts` | Updated mocks for HeartbeatResult |
+| `packages/agent-daemon/src/__tests__/openclaw-integration.test.ts` | Updated mocks for HeartbeatResult |
+| `packages/agent-daemon/src/__tests__/private-ip.test.ts` | Updated assertion for HeartbeatResult |
+
+### Commits
+- `f98de5e` — feat(registry,daemon): task cancellation via heartbeat — cancel signal, daemon kill, status flow (#85)
+- `f605b25` — test(registry,daemon): 46 task cancellation tests + fix existing tests for HeartbeatResult type (#85)
+- `0977faf` — fix(daemon): update private-ip test for HeartbeatResult type (#85)
+
+### Next
+- Dashboard: cancel button on task detail page (calls PUT /api/tasks/:id/cancel)
+- Dashboard: show "cancelling" status badge (amber/yellow)
+- Timeout escalation: if daemon doesn't confirm cancel within N heartbeats, force-cancel from registry side
+- Integration test with real OpenClaw process
+
+---
+
 ## 2026-02-15 — Issue #84: Cost Estimation: Completar e Expor
 
 ### Summary
