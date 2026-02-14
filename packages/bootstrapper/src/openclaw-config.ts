@@ -36,6 +36,8 @@ export interface OpenClawConfigOptions {
   instructions?: string;
   /** Security overrides */
   security?: Partial<SecurityConfig>;
+  /** Fallback model identifiers (used if primary model fails) */
+  fallbackModels?: string[];
 }
 
 /**
@@ -65,6 +67,9 @@ export interface OpenClawGatewayConfig {
   llm: {
     model: string;
     maxTokens?: number;
+    fallbacks?: {
+      models: string[];
+    };
   };
   gateway: {
     http: {
@@ -237,13 +242,16 @@ export function buildSystemPrompt(options: OpenClawConfigOptions): string {
 export function generateOpenClawConfig(
   options: OpenClawConfigOptions,
 ): OpenClawGatewayConfig {
-  const { agent, apiToken, security } = options;
+  const { agent, apiToken, security, fallbackModels } = options;
   const mergedSecurity = { ...DEFAULT_SECURITY, ...security };
 
   const config: OpenClawGatewayConfig = {
     llm: {
       model: agent.model,
       maxTokens: mergedSecurity.maxTokens,
+      ...(fallbackModels && fallbackModels.length > 0
+        ? { fallbacks: { models: fallbackModels } }
+        : {}),
     },
     gateway: {
       http: {
@@ -372,6 +380,10 @@ export function logConfigSummary(
   logger.info(`  Auth token: ${config.gateway.http.endpoints.chatCompletions.auth?.token ? "configured" : "none"}`);
   logger.info(`  Sandbox: ${config.sandbox}`);
   logger.info(`  System prompt: ${systemPromptLength} chars`);
+
+  if (config.llm.fallbacks?.models?.length) {
+    logger.info(`  Fallback models: ${config.llm.fallbacks.models.join(", ")}`);
+  }
 
   if (config.security) {
     logger.info(`  Security:`);

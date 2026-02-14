@@ -72,6 +72,31 @@ export type {
   ConfigValidationResult,
 } from "./openclaw-config.js";
 
+// Model & Auth Config
+export {
+  detectProvider,
+  extractModelName,
+  getRequiredProviders,
+  getProviderConfig,
+  validateKeyFormat,
+  validateKeyLive,
+  buildModelConfig,
+  resolveAuthProfiles,
+  validateAuthProfiles,
+  authProfilesToEnv,
+  generateFallbackConfig,
+  logModelAuthSummary,
+  PROVIDER_REGISTRY,
+} from "./model-config.js";
+export type {
+  LLMProviderName,
+  LLMProviderConfig,
+  AuthProfile,
+  ModelConfig,
+  ModelConfigOptions,
+  KeyValidationResult,
+} from "./model-config.js";
+
 // ---------------------------------------------------------------------------
 // Main orchestrator
 // ---------------------------------------------------------------------------

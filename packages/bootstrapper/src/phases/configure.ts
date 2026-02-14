@@ -22,6 +22,15 @@ import {
   logConfigSummary,
 } from "../openclaw-config.js";
 import type { OpenClawConfigOptions } from "../openclaw-config.js";
+import {
+  buildModelConfig,
+  resolveAuthProfiles,
+  validateAuthProfiles,
+  authProfilesToEnv,
+  logModelAuthSummary,
+  generateFallbackConfig,
+} from "../model-config.js";
+import type { AuthProfile, ModelConfigOptions, LLMProviderName, LLMProviderConfig } from "../model-config.js";
 
 const OPENCLAW_HOME = "/home/openclaw";
 const OPENCLAW_WORKSPACE = `${OPENCLAW_HOME}/.openclaw/workspace`;
@@ -137,17 +146,30 @@ export interface ConfigureOpenClawOptions {
   instructions?: string;
   /** Security configuration overrides */
   security?: Partial<import("../openclaw-config.js").SecurityConfig>;
+  /** Fallback models in priority order */
+  fallbackModels?: string[];
+  /** Provider overrides for secret refs, base URLs, etc. */
+  providerOverrides?: Partial<Record<LLMProviderName, Partial<LLMProviderConfig>>>;
+  /** Whether to validate API keys via live API calls (default: false) */
+  validateKeysLive?: boolean;
+  /** Resolved auth profiles (if pre-resolved externally) */
+  authProfiles?: AuthProfile[];
 }
 
 /**
  * Configure OpenClaw on the VM:
+ * - Resolve model configuration and auth profiles
  * - Generate system prompt with role, tools, and instructions
  * - Generate openclaw.json with chatCompletions, sandbox off, security config
+ * - Include fallback models if configured
+ * - Inject auth profile env vars for LLM providers
  * - Validate the generated config
  * - Write SOUL.md (system prompt) and config.yaml to the VM
  * - Log configuration summary
  *
  * The agent runs headless — Chat Completions API only, no messaging channels.
+ *
+ * @returns Resolved auth profiles (env vars for the daemon .env file)
  */
 export async function configureOpenClaw(
   ssh: ISSHClient,
@@ -156,12 +178,36 @@ export async function configureOpenClaw(
   apiToken?: string,
   logger?: BootstrapperLogger,
   options?: ConfigureOpenClawOptions,
-): Promise<void> {
+): Promise<{ authEnvVars: Map<string, string> }> {
   logger?.info("Configuring OpenClaw gateway");
 
   // Ensure directories exist
   await ssh.exec(`mkdir -p ${OPENCLAW_WORKSPACE}`);
   await ssh.exec(`mkdir -p ${OPENCLAW_HOME}/.openclaw`);
+
+  // -------------------------------------------------------------------------
+  // Model & Auth configuration
+  // -------------------------------------------------------------------------
+  let authEnvVars = new Map<string, string>();
+
+  if (options?.authProfiles && options.authProfiles.length > 0) {
+    // Auth profiles provided externally (e.g. pre-resolved by deploy orchestrator)
+    authEnvVars = authProfilesToEnv(options.authProfiles);
+    logger?.info(`Using ${options.authProfiles.length} pre-resolved auth profile(s)`);
+
+    // Validate live if requested
+    if (options.validateKeysLive) {
+      const validation = await validateAuthProfiles(options.authProfiles, logger);
+      if (!validation.valid) {
+        const failures = validation.providers
+          .filter((p) => !p.valid)
+          .map((p) => `${p.provider}: ${p.error}`)
+          .join("; ");
+        throw new Error(`API key validation failed: ${failures}`);
+      }
+      logger?.info("All API keys validated ✓");
+    }
+  }
 
   // Build configuration options
   const configOptions: OpenClawConfigOptions = {
@@ -172,6 +218,7 @@ export async function configureOpenClaw(
     tools: options?.tools,
     instructions: options?.instructions,
     security: options?.security,
+    fallbackModels: options?.fallbackModels,
   };
 
   // 1. Build system prompt with role, tools, and instructions
@@ -230,6 +277,8 @@ export async function configureOpenClaw(
   }
 
   logger?.info("OpenClaw configured (chatCompletions, sandbox off, security applied) ✓");
+
+  return { authEnvVars };
 }
 
 // ---------------------------------------------------------------------------
@@ -492,14 +541,16 @@ export async function configure(
 
   // 2. Configure OpenClaw
   callbacks?.onPhaseStart?.("configure-openclaw");
+  let authEnvVars = new Map<string, string>();
   try {
-    await configureOpenClaw(
+    const result = await configureOpenClaw(
       ssh,
       config.agent,
       config.role.soulMd,
       config.openclawApiToken,
       logger,
     );
+    authEnvVars = result.authEnvVars;
     callbacks?.onPhaseComplete?.("configure-openclaw");
   } catch (err) {
     callbacks?.onPhaseError?.("configure-openclaw", err as Error);
@@ -519,7 +570,12 @@ export async function configure(
   // 4. Install daemon
   callbacks?.onPhaseStart?.("install-daemon");
   try {
-    await installDaemon(ssh, config, injectionResult.envSecrets, logger);
+    // Merge injected secrets with auth profile env vars
+    const mergedSecrets = new Map([
+      ...injectionResult.envSecrets,
+      ...authEnvVars,
+    ]);
+    await installDaemon(ssh, config, mergedSecrets, logger);
     callbacks?.onPhaseComplete?.("install-daemon");
   } catch (err) {
     callbacks?.onPhaseError?.("install-daemon", err as Error);
