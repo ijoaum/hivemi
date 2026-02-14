@@ -5,11 +5,17 @@ import { startOfflineDetection } from "./lib/offline-detection.js";
 import { startLockTimeoutJob } from "./lib/lock-timeout.js";
 
 const port = parseInt(process.env.PORT || "4001");
-// REGISTRY_HOST controls which interface the registry listens on.
-// In production, set to the private VPC IP (e.g. 10.x.x.x) to avoid
-// exposing the registry on the public internet.
-// Default: 0.0.0.0 (all interfaces) for dev convenience.
-const host = process.env.REGISTRY_HOST || "0.0.0.0";
+// BIND_ADDRESS controls which interface the registry listens on.
+// In production, set to the private VPC IP (e.g. 10.x.x.x) to restrict access
+// to agents within the private network only.
+//
+// Examples:
+//   BIND_ADDRESS=10.116.0.2   → only VPC traffic (production)
+//   BIND_ADDRESS=127.0.0.1    → localhost only (default, safe)
+//   BIND_ADDRESS=0.0.0.0      → all interfaces (dev only, NOT recommended in production)
+//
+// Legacy: REGISTRY_HOST is still supported for backward compatibility.
+const host = process.env.BIND_ADDRESS || process.env.REGISTRY_HOST || "127.0.0.1";
 
 // Lock timeout configuration (from env vars or defaults)
 const lockTimeoutMs = parseInt(process.env.LOCK_TIMEOUT_MS || "600000"); // 10 minutes

@@ -36,7 +36,7 @@ export interface DaemonConfig {
   teamId: string;
   /** LLM model identifier */
   model: string;
-  /** Registry base URL (e.g. http://10.0.0.1:4001) */
+  /** Registry base URL (e.g. http://10.116.0.2:4001 for VPC, http://localhost:4001 for dev) */
   registryUrl: string;
   /** Shared secret for daemon ↔ registry auth */
   hivemiSecret: string;

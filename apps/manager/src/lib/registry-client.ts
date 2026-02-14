@@ -6,6 +6,8 @@
 
 import { logger } from "./logger.js";
 
+// Registry URL — in production, this should point to the Registry's private VPC IP.
+// Example: REGISTRY_URL=http://10.116.0.2:4001
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://localhost:4001";
 
 interface ApiResponse<T = unknown> {

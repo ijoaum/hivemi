@@ -410,7 +410,13 @@ export class DeployOrchestrator extends EventEmitter {
       const role = roleResult.data;
 
       // Build bootstrap config
-      const registryUrl = process.env.REGISTRY_URL || "http://localhost:4001";
+      // Use private VPC IP for registry URL so agents connect over the private network.
+      // Priority: REGISTRY_PRIVATE_URL env → auto-construct from control plane IP → REGISTRY_URL → fallback
+      const registryPort = process.env.REGISTRY_PORT || "4001";
+      const registryUrl = process.env.REGISTRY_PRIVATE_URL
+        || (this.controlPlaneIp && this.controlPlaneIp !== "127.0.0.1"
+          ? `http://${this.controlPlaneIp}:${registryPort}`
+          : process.env.REGISTRY_URL || "http://localhost:4001");
       const hivemiSecret = process.env.HIVEMI_SECRET || "hivemi-dev-secret";
 
       const bootstrapConfig = {
