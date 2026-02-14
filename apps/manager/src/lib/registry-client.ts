@@ -324,6 +324,35 @@ export class RegistryClient {
 
     return result.data;
   }
+
+  // =========================================================================
+  // RECONCILIATION (Issue #83)
+  // =========================================================================
+
+  /**
+   * Get the last periodic reconciliation result from the Registry.
+   */
+  async getReconciliationStatus(): Promise<ApiResponse<unknown>> {
+    return this.request<unknown>("GET", "/api/infra/reconcile");
+  }
+
+  /**
+   * Trigger an immediate reconciliation on the Registry.
+   */
+  async triggerReconciliation(options?: {
+    autoFix?: boolean;
+    tag?: string;
+  }): Promise<ApiResponse<unknown>> {
+    return this.request<unknown>("POST", "/api/infra/reconcile", options);
+  }
+
+  /**
+   * Get reconciliation log history from the Registry.
+   */
+  async getReconciliationHistory(limit?: number): Promise<ApiResponse<unknown>> {
+    const qs = limit ? `?limit=${limit}` : "";
+    return this.request<unknown>("GET", `/api/infra/reconcile/history${qs}`);
+  }
 }
 
 export const registryClient = new RegistryClient();

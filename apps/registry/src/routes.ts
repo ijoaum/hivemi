@@ -17,6 +17,7 @@ import deployRoutes from "./routes/deploys.js";
 import taskQueueRoutes from "./routes/tasks.js";
 import discoveryRoutes from "./routes/discovery.js";
 import logRoutes from "./routes/logs.js";
+import reconcileRoutes from "./routes/reconcile.js";
 
 const app = new Hono();
 
@@ -457,5 +458,11 @@ app.route("/api/telemetry", telemetryRoutes);
 // =============================================================================
 
 app.route("/api/deploys", deployRoutes);
+
+// =============================================================================
+// RECONCILIATION (Issue #83)
+// =============================================================================
+
+app.route("/api/infra/reconcile", reconcileRoutes);
 
 export default app;

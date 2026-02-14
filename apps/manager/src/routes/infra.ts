@@ -1,6 +1,7 @@
 // =============================================================================
 // Infra Routes
 // Reconciliation and cost estimation API endpoints
+// Issue #83: Enhanced with trigger endpoint, auto-fix, and last result caching
 // =============================================================================
 
 import { Hono } from "hono";
@@ -57,7 +58,7 @@ async function getRegistryAgents() {
 }
 
 // =============================================================================
-// GET /reconcile — Run reconciliation
+// GET /reconcile — Run reconciliation report
 // =============================================================================
 
 infraRoutes.get("/reconcile", async (c) => {
@@ -71,6 +72,95 @@ infraRoutes.get("/reconcile", async (c) => {
     return c.json({ success: true, data: report });
   } catch (err) {
     logger.error(err, "Reconciliation failed");
+    return c.json(
+      { success: false, error: (err as Error).message },
+      500,
+    );
+  }
+});
+
+// =============================================================================
+// POST /reconcile — Trigger reconciliation with optional auto-fix
+// =============================================================================
+
+infraRoutes.post("/reconcile", async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { autoFix = false } = body as { autoFix?: boolean };
+
+    const provider = await getProvider();
+    const agents = await getRegistryAgents();
+
+    const prov = await loadProvisioner();
+    const report = await prov.generateReconciliationReport(provider, agents, "hivemi", logger);
+
+    let autoFixed = 0;
+
+    // Auto-fix: mark phantom agents as offline
+    if (autoFix && report.result.phantomAgentIds.length > 0) {
+      for (const agentId of report.result.phantomAgentIds) {
+        try {
+          const updateResult = await registryClient.updateAgent(agentId, {
+            status: "offline",
+          });
+          if (updateResult.success) {
+            autoFixed++;
+            logger.warn({ agentId }, "Phantom agent marked as offline via auto-fix");
+          }
+        } catch (err) {
+          logger.error({ agentId, err }, "Failed to auto-fix phantom agent");
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        ...report,
+        autoFix: {
+          enabled: autoFix,
+          phantomsFixed: autoFixed,
+        },
+      },
+    });
+  } catch (err) {
+    logger.error(err, "Reconciliation with auto-fix failed");
+    return c.json(
+      { success: false, error: (err as Error).message },
+      500,
+    );
+  }
+});
+
+// =============================================================================
+// GET /reconcile/status — Get last periodic reconciliation result
+// (Proxied from Registry's reconciliation job)
+// =============================================================================
+
+infraRoutes.get("/reconcile/status", async (c) => {
+  try {
+    const result = await registryClient.getReconciliationStatus();
+    return c.json(result);
+  } catch (err) {
+    logger.error(err, "Failed to get reconciliation status");
+    return c.json(
+      { success: false, error: (err as Error).message },
+      500,
+    );
+  }
+});
+
+// =============================================================================
+// GET /reconcile/history — Get reconciliation log history
+// =============================================================================
+
+infraRoutes.get("/reconcile/history", async (c) => {
+  try {
+    const limit = c.req.query("limit") || "20";
+    const result = await registryClient.getReconciliationHistory(parseInt(limit));
+    return c.json(result);
+  } catch (err) {
+    logger.error(err, "Failed to get reconciliation history");
     return c.json(
       { success: false, error: (err as Error).message },
       500,

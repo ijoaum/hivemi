@@ -279,6 +279,34 @@ export interface CostReport {
 
 export const infraApi = {
   reconcile: () => fetchApi<ReconciliationReport>("/api/infra/reconcile"),
+  triggerReconcile: (options?: { autoFix?: boolean }) =>
+    fetchApi<ReconciliationReport & { autoFix: { enabled: boolean; phantomsFixed: number } }>(
+      "/api/infra/reconcile/trigger",
+      {
+        method: "POST",
+        body: JSON.stringify(options || {}),
+      },
+    ),
+  reconcileStatus: () => fetchApi<{
+    ran: boolean;
+    skipReason?: string;
+    healthy: number;
+    orphaned: number;
+    phantom: number;
+    ipMismatches: number;
+    autoFixed: number;
+    status: "clean" | "warning" | "critical";
+    timestamp: string;
+    provider?: string;
+  }>("/api/infra/reconcile/status"),
+  reconcileHistory: (limit?: number) =>
+    fetchApi<Array<{
+      id: string;
+      timestamp: string;
+      level: string;
+      message: string;
+      metadata: Record<string, unknown> | null;
+    }>>(`/api/infra/reconcile/history${limit ? `?limit=${limit}` : ""}`),
   costs: () => fetchApi<CostReport>("/api/infra/costs"),
   destroyOrphan: (instanceId: string) => fetchApi<{ message: string }>(`/api/infra/reconcile/orphan/${instanceId}`, {
     method: "DELETE",
