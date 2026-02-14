@@ -275,6 +275,56 @@ export const infraApi = {
   }),
 };
 
+// Cloud Settings
+export interface CloudConfig {
+  provider: "digitalocean" | "gcp";
+  region: string;
+  instanceSize: "small" | "medium" | "large";
+  hasApiToken: boolean;
+  hasSSHKey: boolean;
+  sshKeyId: string | null;
+}
+
+export interface CloudRegion {
+  slug: string;
+  name: string;
+  available: boolean;
+  flag: string;
+}
+
+export interface CloudTestResult {
+  valid: boolean;
+  account?: string;
+  dropletLimit?: number;
+  error?: string;
+}
+
+export interface CloudSSHKeyResult {
+  publicKey: string;
+}
+
+export const cloudApi = {
+  get: () => fetchApi<CloudConfig>("/api/settings/cloud"),
+  update: (data: {
+    provider: string;
+    region: string;
+    instanceSize: string;
+    apiToken?: string;
+    sshPublicKey?: string;
+    sshPrivateKey?: string;
+  }) => fetchApi<CloudConfig>("/api/settings/cloud", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }),
+  regions: () => fetchApi<CloudRegion[]>("/api/settings/cloud/regions"),
+  test: () => fetchApi<CloudTestResult>("/api/settings/cloud/test", {
+    method: "POST",
+  }),
+  generateSSHKey: () => fetchApi<CloudSSHKeyResult>("/api/settings/cloud/ssh-key/generate", {
+    method: "POST",
+  }),
+};
+
 // Deploy
 export interface Deploy {
   id: string;
