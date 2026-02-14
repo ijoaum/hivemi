@@ -37,6 +37,13 @@ export interface Agent {
   port: number;
   currentTaskId: string | null;
   lastHeartbeat: string | null;
+  version: string | null;
+  cloud: {
+    provider: string;
+    region: string;
+    instanceId: string;
+  } | null;
+  deployId: string | null;
   createdAt: string;
   updatedAt: string;
   // Populated from JOIN
@@ -377,4 +384,56 @@ export const deployApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+};
+
+// Telemetry
+export interface TelemetryInfra {
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+  diskUsed: number;
+  diskTotal: number;
+  loadAvg: number | number[];
+}
+
+export interface TelemetryLlm {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  errors: number;
+  avgLatencyMs: number;
+}
+
+export interface TelemetryTasks {
+  completed: number;
+  failed: number;
+  active: number;
+}
+
+export interface TelemetryDaemon {
+  uptime: number;
+  version: string;
+  openclawStatus: string;
+}
+
+export interface AgentTelemetry {
+  id: string;
+  agentId: string;
+  timestamp: string;
+  infra: TelemetryInfra | null;
+  llm: TelemetryLlm | null;
+  tasks: TelemetryTasks | null;
+  daemon: TelemetryDaemon | null;
+}
+
+export const telemetryApi = {
+  latest: (agentId: string) => fetchApi<AgentTelemetry | null>(`/api/agents/${agentId}/telemetry`),
+  history: (agentId: string, params?: { from?: string; to?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set("from", params.from);
+    if (params?.to) qs.set("to", params.to);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const queryStr = qs.toString() ? `?${qs.toString()}` : "";
+    return fetchApi<AgentTelemetry[]>(`/api/agents/${agentId}/telemetry/history${queryStr}`);
+  },
 };

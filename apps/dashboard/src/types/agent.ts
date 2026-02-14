@@ -16,10 +16,12 @@ export interface Agent {
   team: TeamId;
   status: AgentStatus;
   currentTask?: string;
-  uptime: number; // in seconds
-  tasksToday: number;
-  cpuUsage: number; // 0-100
-  memoryUsage: number; // 0-100
+  uptime: number; // in seconds — from telemetry
+  tasksToday: number; // from telemetry
+  cpuUsage: number; // 0-100 — from telemetry
+  memoryUsage: number; // 0-100 — from telemetry
+  model?: string; // LLM model configured
+  cloud?: { provider: string; region: string; instanceId: string } | null;
   deployId?: string;
 }
 

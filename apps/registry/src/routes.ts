@@ -160,6 +160,9 @@ app.get("/api/agents", async (c) => {
         port: agents.port,
         currentTaskId: agents.currentTaskId,
         lastHeartbeat: agents.lastHeartbeat,
+        version: agents.version,
+        cloud: agents.cloud,
+        deployId: agents.deployId,
         createdAt: agents.createdAt,
         updatedAt: agents.updatedAt,
         role: {
@@ -203,6 +206,9 @@ app.get("/api/agents/:id", async (c) => {
         port: agents.port,
         currentTaskId: agents.currentTaskId,
         lastHeartbeat: agents.lastHeartbeat,
+        version: agents.version,
+        cloud: agents.cloud,
+        deployId: agents.deployId,
         createdAt: agents.createdAt,
         updatedAt: agents.updatedAt,
         role: {

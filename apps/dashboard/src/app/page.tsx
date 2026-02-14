@@ -6,6 +6,7 @@ import { StatusBar } from "@/components/status-bar";
 import { DeployAgentModal, DeployToast } from "@/components/deploy-agent-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
+import { useAgentTelemetry } from "@/hooks/use-agent-telemetry";
 import { agentsApi, teamsApi, rolesApi, deployApi, type Agent, type Team, type Role } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Hexagon } from "lucide-react";
@@ -93,7 +94,7 @@ export default function Home() {
 
   const isLoading = agentsLoading || teamsLoading;
 
-  // Convert API agents to display format
+  // Convert API agents to display format — using real data, no mocks
   const agents = useMemo(() => {
     if (!apiAgents?.length) return [];
     return apiAgents.map(a => {
@@ -107,13 +108,19 @@ export default function Home() {
         teamId: a.teamId,
         status: a.status,
         currentTask: a.currentTaskId ? "Processing task..." : undefined,
-        progress: a.status === "working" ? Math.floor(Math.random() * 60) + 20 : undefined,
-        uptime: Math.floor(Math.random() * 28800) + 3600,
-        tasksToday: Math.floor(Math.random() * 50) + 10,
+        uptime: 0, // Will come from telemetry
+        tasksToday: 0, // Will come from telemetry
+        cpuUsage: 0, // Will come from telemetry
+        memoryUsage: 0, // Will come from telemetry
         model: a.model,
+        cloud: a.cloud ?? null,
       };
     });
   }, [apiAgents]);
+
+  // Fetch telemetry for all agents
+  const agentIds = useMemo(() => agents.map(a => a.id), [agents]);
+  const telemetryMap = useAgentTelemetry(agentIds, 10000);
 
   // Calculate stats from agents
   const stats = useMemo(() => ({
@@ -335,6 +342,7 @@ export default function Home() {
                         <AgentCard
                           key={agent.id}
                           agent={agent as any}
+                          telemetry={telemetryMap[agent.id] ?? null}
                           onViewLogs={() => console.log("View logs:", agent.name)}
                           onConfigure={() => console.log("Configure:", agent.name)}
                           onStart={() => handleAgentStart(agent.id)}
