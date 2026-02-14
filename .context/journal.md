@@ -1,5 +1,121 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #89: Daemon — Report Tool Calls as Steps
+
+### Summary
+Implemented tool call interception and progress reporting in the Daemon. When the OpenClaw agent executes a task using streaming (SSE), the Daemon now intercepts `tool_calls` from the Chat Completions response, extracts tool names and arguments, and reports them as progress steps to the Registry via `POST /api/tasks/:id/progress`. Includes debounce (2s default) to avoid flooding the Registry, retry with exponential backoff for network errors, and configurable enable/disable via environment variables. 55 new tests.
+
+### What was done
+
+1. **OpenClaw Interceptor** (`packages/agent-daemon/src/openclaw-interceptor.ts`):
+   - Processes SSE `data:` payloads, detects `tool_calls` in streaming deltas
+   - Accumulates tool call fragments across multiple chunks (args can be split)
+   - Emits `ToolCallEvent` with callId, toolName, arguments, argumentsSummary, timestamp
+   - Human-readable summaries per tool type:
+     - `exec` → `$ npm install`
+     - `read` → `📄 /src/index.ts`
+     - `write` → `✏️ /tmp/out.txt`
+     - `edit` → `🔧 /src/app.ts`
+     - `web_search` → `🔍 Node.js streams`
+     - `web_fetch` → `🌐 https://example.com`
+     - `browser` → `🖥️ browser:screenshot`
+     - Unknown tools → `key: value` (first key-value pair)
+   - Configurable: `enabled`, `maxArgsSummaryLength`
+   - Safe: callback errors caught and logged as warnings
+
+2. **Progress Reporter** (`packages/agent-daemon/src/progress-reporter.ts`):
+   - Receives `ToolCallEvent` from interceptor, reports to Registry as progress steps
+   - **Debounce**: first event sent immediately, subsequent events batched within window (default: 2000ms)
+   - **Retry with backoff**: exponential delay (100ms × 2^attempt), max 3 retries, cap at 10s
+   - **Non-blocking**: errors don't affect task execution
+   - Lifecycle: `startTask(taskId)` / `stopTask()` — flush pending on stop
+   - Metrics: `getMetrics()` returns `{ sent, failed, pending }`
+
+3. **RegistryClient** (`packages/agent-daemon/src/registry-client.ts`):
+   - New `reportProgress(taskId, progress)` method → `POST /api/tasks/:id/progress`
+   - Throws on error (caller handles retry)
+
+4. **OpenClawClient** (`packages/agent-daemon/src/openclaw-client.ts`):
+   - Integrated `OpenClawInterceptor` into the streaming execution path
+   - New `parseSSEStreamWithInterceptor()` replaces standalone `parseSSEStream` for streaming
+   - Each SSE `data:` line routes through interceptor for tool call detection + content extraction
+   - `onToolCall(callback)` method to register external callbacks
+   - `getInterceptor()` for testing/advanced use
+   - Interceptor reset before each task
+
+5. **TaskExecutor** (`packages/agent-daemon/src/task-executor.ts`):
+   - Wires `OpenClawClient.onToolCall()` → `ProgressReporter.handleToolCall()`
+   - Calls `startTask()` before execution, `stopTask()` in finally block
+   - Logs progress metrics after each task
+
+6. **DaemonConfig** (`packages/agent-daemon/src/types.ts`):
+   - `progressReportingEnabled?: boolean` (env: `PROGRESS_REPORTING`, default: `true`)
+   - `progressDebounceMs?: number` (env: `PROGRESS_DEBOUNCE_MS`, default: `2000`)
+   - `ProgressPayload` type and `IRegistryClient.reportProgress()` interface method
+
+7. **55 new tests** (`packages/agent-daemon/src/__tests__/tool-call-progress.test.ts`):
+   - **Interceptor — tool call detection (5)**: single chunk, split chunks, sequential, parallel indices, [DONE]
+   - **Interceptor — content passthrough (4)**: content delta, tool call → null, [DONE] → null, invalid JSON
+   - **Interceptor — argument summaries (11)**: exec, read, write, edit, web_search, web_fetch, browser, unknown, truncation, empty, invalid JSON
+   - **Interceptor — configuration (2)**: disabled, custom maxArgsSummaryLength
+   - **Interceptor — error handling (4)**: callback error, warning log, empty delta, missing choices
+   - **Interceptor — reset (1)**: clear accumulators
+   - **Reporter — lifecycle (4)**: no task, with task, flush on stop, reset metrics
+   - **Reporter — debounce (3)**: immediate first, debounce rapid, batch during window
+   - **Reporter — retry (4)**: network error retry, max retries, exponential backoff, delay cap
+   - **Reporter — enable/disable (2)**: disabled, enabled
+   - **Reporter — metrics (3)**: sent, failed, pending
+   - **Reporter — payload (2)**: step format, timestamp
+   - **Integration (2)**: interceptor → reporter → registry, full multi-tool flow
+   - **Config parsing (4)**: PROGRESS_REPORTING, default true, PROGRESS_DEBOUNCE_MS, default 2000
+   - **Edge cases (4)**: unknown name, multiple callbacks, no function field, interface check
+
+8. **Updated 3 existing test files**: added `reportProgress: vi.fn()` to mock registries
+
+### Key Decisions
+- **Interceptor in streaming path only** — non-streaming responses don't include tool_calls in the same way (they're in the final JSON). The interceptor hooks into the SSE parsing loop which is the default (and recommended) execution mode.
+- **Separate interceptor and reporter** — the interceptor handles SSE parsing and tool call detection (sync, no I/O). The reporter handles debounce, retry, and network calls (async). Clean separation of concerns.
+- **Debounce at 2s default** — tool calls during a task can be rapid (read → edit → exec in 1s). 2s batches multiple calls into fewer API requests without losing much granularity.
+- **Non-blocking everything** — progress reporting is nice-to-have, not critical. Network errors are retried but ultimately swallowed. The task execution is never affected by progress reporting failures.
+- **`parseSSEStreamWithInterceptor` replaces `parseSSEStream` for streaming** — the standalone `parseSSEStream` function is kept for backward compatibility (still exported), but the streaming execution now uses the interceptor-aware variant.
+- **Tool call detection via `delta.id`** — a new `id` field in `tool_calls[n]` indicates a new tool call starting. Subsequent chunks without `id` at the same index are continuations (argument fragments).
+
+### Acceptance Criteria
+- [x] Tool calls do OpenClaw interceptados
+- [x] POST /api/tasks/:id/progress enviado para cada tool call
+- [x] Informações úteis capturadas (nome, args, duração)
+- [x] Debounce implementado (2s default, configurable via PROGRESS_DEBOUNCE_MS)
+- [x] Retry com backoff funcionando (3 attempts, exponential, max 10s)
+- [x] Configuração para ativar/desativar progress (PROGRESS_REPORTING env var)
+- [x] Logs de debug disponíveis (interceptor + reporter log at debug level)
+- [x] Não afeta performance da execução da task (non-blocking, errors swallowed)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `packages/agent-daemon/src/openclaw-interceptor.ts` | NEW — SSE tool call interceptor |
+| `packages/agent-daemon/src/progress-reporter.ts` | NEW — debounce + retry progress reporter |
+| `packages/agent-daemon/src/types.ts` | +ProgressPayload, +IRegistryClient.reportProgress, +config fields |
+| `packages/agent-daemon/src/registry-client.ts` | +reportProgress() method |
+| `packages/agent-daemon/src/openclaw-client.ts` | Interceptor integration, parseSSEStreamWithInterceptor |
+| `packages/agent-daemon/src/task-executor.ts` | Wire interceptor → reporter, start/stop per task |
+| `packages/agent-daemon/src/index.ts` | Export interceptor + reporter |
+| `packages/agent-daemon/src/__tests__/tool-call-progress.test.ts` | NEW — 55 tests |
+| `packages/agent-daemon/src/__tests__/agent-daemon.test.ts` | +reportProgress mock |
+| `packages/agent-daemon/src/__tests__/openclaw-integration.test.ts` | +reportProgress mock |
+| `packages/agent-daemon/src/__tests__/task-execution-flow.test.ts` | +reportProgress mock |
+
+### Commits
+- `2490d09` — feat(daemon): report tool calls as progress steps — interceptor, debounce, retry (#89)
+
+### Next
+- Dashboard: real-time progress display (poll GET /api/tasks/:id/progress)
+- Duration tracking: capture elapsed time for each tool call (start → result)
+- Tool call result interception: capture success/failure of each tool call
+- Progress streaming via WebSocket (instead of polling) for real-time dashboard updates
+
+---
+
 ## 2026-02-15 — Issue #88: Registry Task Progress Endpoints
 
 ### Summary
