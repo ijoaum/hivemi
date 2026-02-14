@@ -38,11 +38,13 @@ export interface Agent {
   currentTaskId: string | null;
   lastHeartbeat: string | null;
   version: string | null;
+  openclawVersion: string | null;
   cloud: {
     provider: string;
     region: string;
     instanceId: string;
   } | null;
+  privateIp: string | null;
   deployId: string | null;
   createdAt: string;
   updatedAt: string;
