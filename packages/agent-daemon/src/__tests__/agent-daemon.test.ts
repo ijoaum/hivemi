@@ -66,10 +66,11 @@ function makeTask(overrides: Partial<DaemonTask> = {}): DaemonTask {
 function makeMockRegistry(): IRegistryClient {
   return {
     register: vi.fn().mockResolvedValue(undefined),
-    heartbeat: vi.fn().mockResolvedValue(true),
+    heartbeat: vi.fn().mockResolvedValue({ ack: true, cancelTask: null }),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     pollTask: vi.fn().mockResolvedValue(null),
     reportTaskResult: vi.fn().mockResolvedValue(undefined),
+    createSubtask: vi.fn().mockResolvedValue(null),
     sendTelemetry: vi.fn().mockResolvedValue(undefined),
     sendLogs: vi.fn().mockResolvedValue(undefined),
     setOffline: vi.fn().mockResolvedValue(undefined),
@@ -580,7 +581,8 @@ describe("RegistryClient", () => {
       const result = await client.heartbeat("idle", null);
 
       expect(capturedUrl).toContain(`/api/agents/${config.agentId}/heartbeat`);
-      expect(result).toBe(true);
+      expect(result.ack).toBe(true);
+      expect(result.cancelTask).toBeNull();
 
       const parsed = JSON.parse(capturedBody);
       expect(parsed.status).toBe("idle");
@@ -601,7 +603,8 @@ describe("RegistryClient", () => {
       const client = new RegistryClient(config, silentLogger);
       const result = await client.heartbeat("idle", null);
 
-      expect(result).toBe(false);
+      expect(result.ack).toBe(false);
+      expect(result.cancelTask).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -617,7 +620,26 @@ describe("RegistryClient", () => {
       const client = new RegistryClient(config, silentLogger);
       const result = await client.heartbeat("working", "task-123");
 
-      expect(result).toBe(true);
+      expect(result.ack).toBe(true);
+      expect(result.cancelTask).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("heartbeat() returns cancelTask when present in response", async () => {
+    const cancelTaskId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ack: true, cancelTask: cancelTaskId }), { status: 200 }),
+    ) as typeof fetch;
+
+    try {
+      const client = new RegistryClient(config, silentLogger);
+      const result = await client.heartbeat("working", cancelTaskId);
+
+      expect(result.ack).toBe(true);
+      expect(result.cancelTask).toBe(cancelTaskId);
     } finally {
       globalThis.fetch = originalFetch;
     }

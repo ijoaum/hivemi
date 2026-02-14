@@ -77,7 +77,7 @@ function makeTask(overrides: Partial<DaemonTask> = {}): DaemonTask {
 function makeMockRegistry(): IRegistryClient {
   return {
     register: vi.fn().mockResolvedValue(undefined),
-    heartbeat: vi.fn().mockResolvedValue(true),
+    heartbeat: vi.fn().mockResolvedValue({ ack: true, cancelTask: null }),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     pollTask: vi.fn().mockResolvedValue(null),
     reportTaskResult: vi.fn().mockResolvedValue(undefined),
