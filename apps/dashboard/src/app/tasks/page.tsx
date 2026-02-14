@@ -125,6 +125,7 @@ export default function TasksPage() {
           <TaskCard 
             key={task.id} 
             task={task as any}
+            onCancelComplete={refetchTasks}
           />
         ))}
       </div>

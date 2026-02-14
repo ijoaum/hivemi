@@ -1,11 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { Task, TaskStatus, TaskPriority } from "@/types/task";
+import { tasksApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Loader2, XCircle } from "lucide-react";
+import { ConfirmDialog } from "./confirm-dialog";
 
 interface TaskCardProps {
   task: Task;
   onClick?: () => void;
+  onCancelComplete?: () => void;
 }
 
 const statusConfig: Record<TaskStatus, { color: string; bg: string; label: string }> = {
@@ -50,7 +55,11 @@ function isTimeout(task: Task): boolean {
   return task.status === "failed" && (task.error === "timeout" || !!task.timeoutAt);
 }
 
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export function TaskCard({ task, onClick, onCancelComplete }: TaskCardProps) {
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
   const timeout = isTimeout(task);
   const status = timeout
     ? { color: "text-orange-400", bg: "bg-orange-500/20", label: "Timed Out" }
@@ -60,6 +69,25 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
   const progress = task.estimatedMs && task.elapsedMs 
     ? Math.min((task.elapsedMs / task.estimatedMs) * 100, 100)
     : 0;
+
+  const handleCancelClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger card onClick
+    setCancelError(null);
+    setShowCancelConfirm(true);
+  };
+
+  const handleCancelConfirm = async () => {
+    setIsCancelling(true);
+    setCancelError(null);
+    try {
+      await tasksApi.cancel(task.id);
+      onCancelComplete?.();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Failed to cancel task");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   return (
     <div
@@ -121,15 +149,62 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
         </div>
       )}
 
+      {/* Cancel error */}
+      {cancelError && (
+        <div className="mb-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400">
+          {cancelError}
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between">
         <span className={cn("text-xs px-2 py-1 rounded-full", status.bg, status.color)}>
           {status.label}
         </span>
-        <span className="text-xs text-gray-500">
-          {formatRelativeTime(task.createdAt)}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Cancel button for running tasks */}
+          {task.status === "locked" && (
+            <button
+              onClick={handleCancelClick}
+              disabled={isCancelling}
+              className={cn(
+                "text-xs px-2 py-1 rounded-full flex items-center gap-1 transition-colors",
+                isCancelling
+                  ? "bg-yellow-500/20 text-yellow-400 cursor-not-allowed opacity-70"
+                  : "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+              )}
+            >
+              {isCancelling ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <XCircle className="w-3 h-3" />
+              )}
+              {isCancelling ? "Cancelling" : "Cancel"}
+            </button>
+          )}
+          {/* Cancelling state indicator */}
+          {task.status === "cancelling" && (
+            <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Cancelling
+            </span>
+          )}
+          <span className="text-xs text-gray-500">
+            {formatRelativeTime(task.createdAt)}
+          </span>
+        </div>
       </div>
+
+      {/* Cancel confirmation dialog */}
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={handleCancelConfirm}
+        title="Cancel Task"
+        message={`Are you sure you want to cancel "${task.title}"? The agent will stop processing it.`}
+        confirmLabel="Cancel Task"
+        isDestructive
+      />
     </div>
   );
 }
