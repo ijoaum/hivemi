@@ -1,0 +1,28 @@
+{
+  "$schema": "OpenClaw gateway config template for HiveMI agent VMs",
+  "$comment": "This template is used by the bootstrapper to generate agent configs. Variables are interpolated at deploy time.",
+  "llm": {
+    "model": "{{MODEL}}",
+    "maxTokens": 32768
+  },
+  "gateway": {
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true,
+          "auth": {
+            "token": "{{API_TOKEN}}"
+          }
+        }
+      }
+    }
+  },
+  "sandbox": "off",
+  "security": {
+    "requestTimeoutSeconds": 300,
+    "maxConcurrentRequests": 1,
+    "rateLimitPerMinute": 30,
+    "allowElevated": false,
+    "toolTimeoutSeconds": 120
+  }
+}

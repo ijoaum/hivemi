@@ -50,9 +50,27 @@ export {
   verifyInstallation,
   configure,
 } from "./phases/configure.js";
-export type { VerifyResult } from "./phases/configure.js";
+export type { VerifyResult, ConfigureOpenClawOptions } from "./phases/configure.js";
 export { waitRegistration } from "./phases/wait-registration.js";
 export { loadRoleConfig, deepMerge } from "./role-loader.js";
+
+// OpenClaw Config
+export {
+  generateOpenClawConfig,
+  buildSystemPrompt,
+  validateOpenClawConfig,
+  logConfigSummary,
+  getToolsForRole,
+  DEFAULT_SECURITY,
+  DEFAULT_WORKER_TOOLS,
+  DEFAULT_EXECUTOR_TOOLS,
+} from "./openclaw-config.js";
+export type {
+  OpenClawConfigOptions,
+  OpenClawGatewayConfig,
+  SecurityConfig,
+  ConfigValidationResult,
+} from "./openclaw-config.js";
 
 // ---------------------------------------------------------------------------
 // Main orchestrator

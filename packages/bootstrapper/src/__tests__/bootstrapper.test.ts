@@ -443,7 +443,7 @@ describe("injectSecrets", () => {
 // ---------------------------------------------------------------------------
 
 describe("configureOpenClaw", () => {
-  it("writes SOUL.md and config", async () => {
+  it("writes SOUL.md with agent identity and config with security settings", async () => {
     const ssh = createMockSSH();
     const agent = {
       agentId: "test-uuid",
@@ -456,24 +456,108 @@ describe("configureOpenClaw", () => {
 
     await configureOpenClaw(ssh, agent, "# Test Soul", "test-token", silentLogger);
 
-    expect(ssh.writeFile).toHaveBeenCalledWith(
-      "/home/openclaw/.openclaw/workspace/SOUL.md",
-      "# Test Soul",
+    // Check SOUL.md was written with agent identity block
+    const soulCall = (ssh.writeFile as any).mock.calls.find(
+      (c: string[]) => c[0].includes("SOUL.md"),
     );
+    expect(soulCall).toBeDefined();
+    const soulContent = soulCall[1] as string;
+    expect(soulContent).toContain("# Test Soul");
+    expect(soulContent).toContain("test-agent");
+    expect(soulContent).toContain("test-uuid");
 
-    // Check config was written with model and chat completions
+    // Check config was written with model, chat completions, and security
     const configCall = (ssh.writeFile as any).mock.calls.find(
       (c: string[]) => c[0].includes("config.yaml"),
     );
     expect(configCall).toBeDefined();
     const config = JSON.parse(configCall[1]);
     expect(config.llm.model).toBe("anthropic/claude-sonnet-4-5");
+    expect(config.llm.maxTokens).toBe(32768);
     expect(config.gateway.http.endpoints.chatCompletions.enabled).toBe(true);
     expect(config.gateway.http.endpoints.chatCompletions.auth.token).toBe("test-token");
     expect(config.sandbox).toBe("off");
 
+    // Security settings present
+    expect(config.security).toBeDefined();
+    expect(config.security.requestTimeoutSeconds).toBe(300);
+    expect(config.security.maxConcurrentRequests).toBe(1);
+    expect(config.security.rateLimitPerMinute).toBe(30);
+    expect(config.security.toolTimeoutSeconds).toBe(120);
+    expect(config.security.allowElevated).toBe(false);
+
     // Config file should have mode 600 (contains API token)
     expect(configCall[2]).toBe("600");
+  });
+
+  it("includes role and tools in system prompt when options provided", async () => {
+    const ssh = createMockSSH();
+    const agent = {
+      agentId: "test-uuid",
+      agentName: "dev-agent",
+      roleId: "role-uuid",
+      teamId: "team-uuid",
+      model: "anthropic/claude-sonnet-4-5",
+      daemonPort: 4002,
+    };
+
+    await configureOpenClaw(ssh, agent, "# Developer", "test-token", silentLogger, {
+      roleName: "developer",
+      instructions: "Focus on code quality.",
+    });
+
+    const soulCall = (ssh.writeFile as any).mock.calls.find(
+      (c: string[]) => c[0].includes("SOUL.md"),
+    );
+    const soulContent = soulCall[1] as string;
+    expect(soulContent).toContain("developer");
+    expect(soulContent).toContain("`exec`");
+    expect(soulContent).toContain("`read`");
+    expect(soulContent).toContain("`write`");
+    expect(soulContent).toContain("Focus on code quality.");
+    expect(soulContent).toContain("Agent Rules");
+  });
+
+  it("verifies config file was written to disk", async () => {
+    const execResults: Record<string, SSHExecResult> = {};
+    const ssh = createMockSSH({
+      exec: vi.fn(async (cmd: string): Promise<SSHExecResult> => {
+        if (cmd.includes("wc -c")) {
+          return { exitCode: 0, stdout: "500\n", stderr: "" };
+        }
+        return execResults[cmd] ?? { exitCode: 0, stdout: "", stderr: "" };
+      }),
+    });
+
+    const agent = {
+      agentId: "test-uuid",
+      agentName: "test-agent",
+      roleId: "role-uuid",
+      teamId: "team-uuid",
+      model: "anthropic/claude-sonnet-4-5",
+      daemonPort: 4002,
+    };
+
+    await configureOpenClaw(ssh, agent, "# Soul", "token", silentLogger);
+
+    // Verify that the cat | wc -c command was called
+    expect(ssh.exec).toHaveBeenCalledWith(expect.stringContaining("wc -c"));
+  });
+
+  it("throws when config validation fails", async () => {
+    const ssh = createMockSSH();
+    const agent = {
+      agentId: "test-uuid",
+      agentName: "test-agent",
+      roleId: "role-uuid",
+      teamId: "team-uuid",
+      model: "", // Empty model will fail validation
+      daemonPort: 4002,
+    };
+
+    await expect(
+      configureOpenClaw(ssh, agent, "# Soul", "token", silentLogger),
+    ).rejects.toThrow("validation failed");
   });
 });
 

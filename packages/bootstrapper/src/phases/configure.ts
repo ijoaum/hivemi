@@ -15,6 +15,13 @@ import type {
   RoleConfig,
 } from "../types.js";
 import { parseSecretTarget, maskSecret, isRequired } from "../secrets/utils.js";
+import {
+  generateOpenClawConfig,
+  buildSystemPrompt,
+  validateOpenClawConfig,
+  logConfigSummary,
+} from "../openclaw-config.js";
+import type { OpenClawConfigOptions } from "../openclaw-config.js";
 
 const OPENCLAW_HOME = "/home/openclaw";
 const OPENCLAW_WORKSPACE = `${OPENCLAW_HOME}/.openclaw/workspace`;
@@ -119,11 +126,28 @@ async function writeSecretFile(
 // ---------------------------------------------------------------------------
 
 /**
+ * Configuration options for the OpenClaw setup phase.
+ */
+export interface ConfigureOpenClawOptions {
+  /** Role name for tool resolution (e.g. "developer", "qa", "pm") */
+  roleName?: string;
+  /** Explicit tool list (overrides role-based defaults) */
+  tools?: string[];
+  /** Additional behavioral instructions */
+  instructions?: string;
+  /** Security configuration overrides */
+  security?: Partial<import("../openclaw-config.js").SecurityConfig>;
+}
+
+/**
  * Configure OpenClaw on the VM:
- * - Set default model
- * - Enable Chat Completions API endpoint (headless, no WhatsApp/Telegram)
- * - Set API token for authentication
- * - Write SOUL.md as the system prompt
+ * - Generate system prompt with role, tools, and instructions
+ * - Generate openclaw.json with chatCompletions, sandbox off, security config
+ * - Validate the generated config
+ * - Write SOUL.md (system prompt) and config.yaml to the VM
+ * - Log configuration summary
+ *
+ * The agent runs headless — Chat Completions API only, no messaging channels.
  */
 export async function configureOpenClaw(
   ssh: ISSHClient,
@@ -131,40 +155,81 @@ export async function configureOpenClaw(
   soulMd: string,
   apiToken?: string,
   logger?: BootstrapperLogger,
+  options?: ConfigureOpenClawOptions,
 ): Promise<void> {
-  logger?.info("Configuring OpenClaw");
+  logger?.info("Configuring OpenClaw gateway");
 
-  // Ensure workspace exists
+  // Ensure directories exist
   await ssh.exec(`mkdir -p ${OPENCLAW_WORKSPACE}`);
+  await ssh.exec(`mkdir -p ${OPENCLAW_HOME}/.openclaw`);
 
-  // Write SOUL.md
-  await ssh.writeFile(`${OPENCLAW_WORKSPACE}/SOUL.md`, soulMd);
-  logger?.debug("Wrote SOUL.md");
-
-  // Generate OpenClaw config
-  // The agent runs headless — Chat Completions API only, no messaging channels
-  const openclawConfig = {
-    llm: {
-      model: agent.model,
-    },
-    gateway: {
-      http: {
-        endpoints: {
-          chatCompletions: {
-            enabled: true,
-            ...(apiToken ? { auth: { token: apiToken } } : {}),
-          },
-        },
-      },
-    },
-    sandbox: "off",
+  // Build configuration options
+  const configOptions: OpenClawConfigOptions = {
+    agent,
+    apiToken,
+    systemPrompt: soulMd,
+    roleName: options?.roleName,
+    tools: options?.tools,
+    instructions: options?.instructions,
+    security: options?.security,
   };
 
+  // 1. Build system prompt with role, tools, and instructions
+  const systemPrompt = buildSystemPrompt(configOptions);
+  logger?.info(`System prompt built: ${systemPrompt.length} chars`);
+
+  // Write SOUL.md (the system prompt the agent will use)
+  await ssh.writeFile(`${OPENCLAW_WORKSPACE}/SOUL.md`, systemPrompt);
+  logger?.debug("Wrote SOUL.md with role and tools context");
+
+  // 2. Generate OpenClaw gateway config
+  const openclawConfig = generateOpenClawConfig(configOptions);
+
+  // 3. Validate the generated config
+  const validation = validateOpenClawConfig(openclawConfig);
+
+  if (validation.warnings.length > 0) {
+    for (const warning of validation.warnings) {
+      logger?.warn(`Config warning: ${warning}`);
+    }
+  }
+
+  if (!validation.valid) {
+    const errorMsg = `OpenClaw config validation failed: ${validation.errors.join("; ")}`;
+    logger?.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  logger?.info("OpenClaw config validated ✓");
+
+  // 4. Write config to VM
   const configPath = `${OPENCLAW_HOME}/.openclaw/config.yaml`;
-  // Write as YAML-ish JSON (OpenClaw accepts JSON config)
+  const configJson = JSON.stringify(openclawConfig, null, 2);
   // Mode 600: config contains API token — readable only by openclaw user
-  await ssh.writeFile(configPath, JSON.stringify(openclawConfig, null, 2), "600");
-  logger?.info("OpenClaw configured (model, Chat Completions API, sandbox off)");
+  await ssh.writeFile(configPath, configJson, "600");
+  logger?.debug(`Wrote config to ${configPath} (${configJson.length} bytes)`);
+
+  // 5. Verify config was written correctly
+  const verifyResult = await ssh.exec(`cat ${configPath} | wc -c`);
+  if (verifyResult.exitCode !== 0) {
+    throw new Error(`Failed to verify config file: ${verifyResult.stderr}`);
+  }
+
+  const writtenBytes = parseInt(verifyResult.stdout.trim(), 10);
+  if (writtenBytes < 50) {
+    throw new Error(
+      `Config file verification failed: expected ~${configJson.length} bytes, ` +
+      `got ${writtenBytes}. File may be corrupted.`,
+    );
+  }
+  logger?.info(`Config file verified: ${writtenBytes} bytes on disk`);
+
+  // 6. Log summary (without secrets)
+  if (logger) {
+    logConfigSummary(openclawConfig, systemPrompt.length, logger);
+  }
+
+  logger?.info("OpenClaw configured (chatCompletions, sandbox off, security applied) ✓");
 }
 
 // ---------------------------------------------------------------------------
