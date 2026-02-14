@@ -1,5 +1,85 @@
 # HiveMI Development Journal
 
+## 2026-02-15 — Issue #78: Agent Detail: Métricas e Sparklines
+
+### Summary
+Added detailed metrics visualizations to the agent detail page — CPU gauge, memory progress bar, uptime/tokens/tasks cards, 24h sparklines for CPU/memory/tokens, and a full deploy information sidebar with cloud provider, versions, and deployment time.
+
+### What was done
+
+1. **`CpuGauge` component** (`apps/dashboard/src/components/cpu-gauge.tsx`):
+   - 270° arc gauge rendered with SVG paths
+   - Color transitions: emerald (< 60%) → amber (60–80%) → red (> 80%)
+   - Center text shows percentage + "CPU" label
+   - Configurable size and stroke width
+   - Smooth transition animations
+
+2. **`Sparkline` component** (`apps/dashboard/src/components/sparkline.tsx`):
+   - Inline SVG polyline chart for historical data
+   - Gradient fill under the line with configurable opacity
+   - Configurable min/max Y-axis bounds (auto or fixed)
+   - Supports custom colors, dimensions, and labels
+   - Graceful empty state ("No data" when < 2 points)
+
+3. **`useAgentDetailTelemetry` hook** (`apps/dashboard/src/hooks/use-agent-detail-telemetry.ts`):
+   - Fetches both `telemetryApi.latest()` and `telemetryApi.history()` in parallel via `Promise.allSettled`
+   - Returns `{ latest, history, isLoading }`
+   - History reversed to chronological order for sparkline rendering
+   - Auto-refreshes every 15 seconds (configurable)
+   - Properly handles unmount cleanup
+
+4. **Rewritten Agent Detail Page** (`apps/dashboard/src/app/agents/[id]/page.tsx`):
+   - **Metrics row** (5 cards): CPU gauge, memory (used/total + progress bar), uptime, tokens today, tasks today
+   - **Sparkline row** (3 charts): CPU 24h, Memory 24h, Tokens/snapshot 24h — with time labels and current values
+   - **Deploy sidebar**: cloud provider, region, private IP, instance ID, daemon version, OpenClaw version, OpenClaw status, "deployed X ago"
+   - All existing functionality preserved: tasks, logs, role info, configuration, action buttons, confirm dialogs
+   - `MetricCard`, `MemoryBar`, `SparklineCard` sub-components for clean composition
+
+5. **Registry — Extended Agent Endpoints** (`apps/registry/src/routes.ts`):
+   - `GET /api/agents` and `GET /api/agents/:id` now return `openclawVersion` and `privateIp` fields
+   - These fields existed in the DB schema but weren't selected in queries
+
+6. **Dashboard API Types** (`apps/dashboard/src/lib/api.ts`):
+   - Added `openclawVersion: string | null` and `privateIp: string | null` to `Agent` interface
+
+### Key Decisions
+- **Separate telemetry hook for detail page** — the existing `useAgentTelemetry` hook fetches latest for multiple agents (used on the overview). The detail page needs both latest + history for one agent, so a dedicated hook is cleaner.
+- **270° arc gauge over full circle** — matches common dashboard gauge UX patterns, leaves room for the label text in the bottom gap
+- **SVG sparklines over charting library** — inline SVG keeps the bundle small, no dependency needed for simple polyline charts. The `Sparkline` component is ~100 lines and handles all cases.
+- **15s refresh for detail page** — slightly slower than the 10s on the overview page since the detail page fetches more data (history endpoint) and the user is likely reading, not scanning.
+- **Memory progress bar color matches gauge logic** — red (>80%), amber (60–80%), emerald (<60%) for visual consistency across all metrics
+- **Deploy info in sidebar** — natural grouping with configuration info, doesn't take space from the main content area (tasks/logs)
+
+### Acceptance Criteria
+- [x] Cards de métricas exibindo dados reais (CPU, RAM, uptime, tokens, tasks)
+- [x] Gauge de CPU funcional e responsivo (270° arc, color transitions)
+- [x] Memória mostrando usado/total com barra de progresso
+- [x] Sparklines renderizando corretamente (CPU, Memória, Tokens)
+- [x] Informações de deploy completas e corretas (provider, region, IP, instance)
+- [x] Versões do daemon e OpenClaw visíveis
+- [x] Tempo desde deploy formatado corretamente ("Xd ago", "Xh ago")
+- [x] Dados atualizando periodicamente (15s refresh)
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `apps/dashboard/src/components/cpu-gauge.tsx` | NEW — 270° arc gauge for CPU |
+| `apps/dashboard/src/components/sparkline.tsx` | NEW — inline SVG sparkline chart |
+| `apps/dashboard/src/hooks/use-agent-detail-telemetry.ts` | NEW — latest + history telemetry hook |
+| `apps/dashboard/src/app/agents/[id]/page.tsx` | Rewritten — metrics, sparklines, deploy info |
+| `apps/dashboard/src/lib/api.ts` | +openclawVersion, +privateIp on Agent |
+| `apps/registry/src/routes.ts` | +openclawVersion, +privateIp in GET /api/agents |
+
+### Commits
+- `475be74` — feat(dashboard): agent detail metrics — CPU gauge, memory bar, sparklines, deploy info (#78)
+
+### Next
+- Agent detail page: real-time SSE updates (instead of polling)
+- Alerting system for sustained red health indicators
+- Historical chart zoom/pan for longer time ranges
+
+---
+
 ## 2026-02-15 — Issue #77: Agent Card: Telemetria Real
 
 ### Summary
