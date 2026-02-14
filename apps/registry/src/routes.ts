@@ -15,6 +15,7 @@ import cloudSettings from "./routes/cloud-settings.js";
 import telemetryRoutes from "./routes/telemetry.js";
 import deployRoutes from "./routes/deploys.js";
 import taskQueueRoutes from "./routes/tasks.js";
+import taskProgressRoutes from "./routes/progress.js";
 import discoveryRoutes from "./routes/discovery.js";
 import logRoutes from "./routes/logs.js";
 import reconcileRoutes from "./routes/reconcile.js";
@@ -289,6 +290,9 @@ app.delete("/api/agents/:id", async (c) => {
 // Mount task queue routes FIRST — /api/tasks/next, /api/tasks/:id/complete, /api/tasks/:id/subtasks
 // These use SELECT FOR UPDATE SKIP LOCKED for atomic task claiming
 app.route("/api/tasks", taskQueueRoutes);
+
+// Task progress routes — /api/tasks/:id/progress (Issue #88)
+app.route("/api/tasks", taskProgressRoutes);
 
 // =============================================================================
 // TASKS — CRUD (existing)

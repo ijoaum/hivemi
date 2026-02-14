@@ -508,6 +508,20 @@ export const TaskProgressSchema = z.object({
 });
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;
 
+/**
+ * Schema for POST /api/tasks/:id/progress — add a progress step to a task.
+ * The agent reports each step/checkpoint as the task executes.
+ */
+export const CreateTaskProgressSchema = z.object({
+  /** Human-readable description of the step (e.g. "Cloning repository") */
+  step: z.string().min(1).max(1000),
+  /** ISO-8601 timestamp of when the step occurred */
+  timestamp: z.coerce.date(),
+  /** Optional tool/function call associated with this step */
+  toolCall: z.string().max(50).optional(),
+});
+export type CreateTaskProgress = z.infer<typeof CreateTaskProgressSchema>;
+
 // =============================================================================
 // AGENT CONFIG — Base + Role + Instance Config Schemas
 // =============================================================================

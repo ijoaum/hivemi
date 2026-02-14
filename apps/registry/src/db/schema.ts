@@ -271,7 +271,7 @@ export const taskProgress = pgTable("task_progress", {
   toolCall: varchar("tool_call", { length: 50 }),
   timestamp: timestamp("timestamp").notNull(),
 }, (table) => [
-  index("task_progress_task_id_idx").on(table.taskId),
+  index("task_progress_task_id_timestamp_idx").on(table.taskId, table.timestamp),
 ]);
 
 // =============================================================================
