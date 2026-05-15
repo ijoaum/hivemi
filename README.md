@@ -386,3 +386,4 @@ The AGPL license requires you to publish your source code if you use HiveMI in a
 ---
 
 © [João Lana](https://github.com/ijoaum)
+
